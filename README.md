@@ -21,7 +21,7 @@ This README describes the implementation that currently exists in this repositor
 
 | Area | Current implementation |
 | --- | --- |
-| Overview | Finance summary, habit completion, recent transactions, active goals, and today's tasks |
+| Overview | Monthly income, expenses, savings, and balance; transaction trends and categories; habit consistency heatmap; goal progress; task status; and recent records |
 | Finance | Accounts, categories, income and expense transactions, and spending summaries |
 | Habits | Daily or weekly habits, dated check-ins, streaks, and completion summaries |
 | Productivity | Tasks with scheduled date, optional deadline, priority, and status |
