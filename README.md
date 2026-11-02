@@ -34,6 +34,8 @@ The main workspace navigation is rendered by `src/app/page.tsx`. Navigation betw
 
 ## Requirements
 
+The complete product specifications are maintained in [FINANCE_DASHBOARD_REQUIREMENTS.md](./FINANCE_DASHBOARD_REQUIREMENTS.md) for the finance dashboard enhancement.
+
 - Node.js 22.13 or later. The server uses Node's built-in `node:sqlite` module.
 - npm, included with Node.js.
 - Git, if you are checking out the repository.

@@ -38,25 +38,27 @@ function downloadCsv(name: string, rows: Array<Array<string | number | null | un
   URL.revokeObjectURL(url);
 }
 
-function HorizontalBarChart({ data, emptyText, color = "#e8754f", formatter }: {
+function HorizontalBarChart({ data, emptyText, color = "#e8754f", formatter, showPercentage = false }: {
   data: { label: string; value: number }[];
   emptyText: string;
   color?: string;
   formatter?: (value: number) => string;
+  showPercentage?: boolean;
 }) {
   if (!data.length || data.every(item => item.value === 0)) {
     return <Empty>{emptyText}</Empty>;
   }
 
-  const maxValue = Math.max(...data.map(item => item.value), 1);
+  const maxValue = Math.max(...data.map(item => Math.abs(item.value)), 1);
+  const total = data.reduce((sum, item) => sum + Math.abs(item.value), 0);
   return <div className="bar-chart-list">{data.map(item => (
     <div className="bar-chart-row" key={item.label}>
       <div className="bar-chart-meta">
         <span>{item.label}</span>
-        <strong>{formatter ? formatter(item.value) : item.value}</strong>
+        <strong>{formatter ? formatter(item.value) : item.value}{showPercentage && total > 0 ? <small>{Math.round((Math.abs(item.value) / total) * 100)}%</small> : null}</strong>
       </div>
-      <div className="bar-chart-track">
-        <div className="bar-chart-fill" style={{ width: `${(item.value / maxValue) * 100}%`, background: color }} />
+      <div className="bar-chart-track" title={`${item.label}: ${formatter ? formatter(item.value) : item.value}${showPercentage && total > 0 ? ` (${Math.round((Math.abs(item.value) / total) * 100)}%)` : ""}`}>
+        <div className={`bar-chart-fill${item.value < 0 ? " negative" : ""}`} style={{ width: `${(Math.abs(item.value) / maxValue) * 100}%`, background: color }} />
       </div>
     </div>
   ))}</div>;
@@ -221,6 +223,19 @@ function OverviewTaskStatus({ tasks, todaysTasks, onNavigate }: { tasks: Task[];
 
 type FinanceMonth = { key: string; label: string; income: number; expenses: number; savings: number };
 
+function smoothLine(points: { x: number; y: number }[]): string {
+  if (!points.length) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  let path = `M ${points[0].x} ${points[0].y}`;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const controlX = (previous.x + current.x) / 2;
+    path += ` C ${controlX} ${previous.y}, ${controlX} ${current.y}, ${current.x} ${current.y}`;
+  }
+  return path;
+}
+
 function FinanceCashFlowChart({ transactions, currency, range }: { transactions: Transaction[]; currency: string; range: number }) {
   const cutoff = new Date();
   cutoff.setDate(1);
@@ -239,63 +254,75 @@ function FinanceCashFlowChart({ transactions, currency, range }: { transactions:
     totals.set(key, month);
   });
 
-  const months: FinanceMonth[] = [...totals.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, month]) => ({
+  const months: FinanceMonth[] = [];
+  const cursor = new Date(cutoff.getFullYear(), cutoff.getMonth(), 1);
+  while (`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}` <= currentKey) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    const month = totals.get(key) || { income: 0, expenses: 0 };
+    months.push({
       key,
-      label: new Date(`${key}-01T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+      label: cursor.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
       ...month,
       savings: month.income - month.expenses,
-    }));
-
-  if (!months.length) {
-    return <Empty>No income or expense records in this period.</Empty>;
+    });
+    cursor.setMonth(cursor.getMonth() + 1);
   }
+
+  const hasActivity = months.some(month => month.income !== 0 || month.expenses !== 0);
+  if (!hasActivity) return <Empty>No income or expense records in this period.</Empty>;
 
   const width = 640;
   const height = 226;
-  const padding = { left: 28, right: 24, top: 18, bottom: 28 };
-  const maxValue = Math.max(...months.flatMap(month => [month.income, month.expenses, month.savings]), 1);
-  const minValue = Math.min(...months.map(month => month.savings), 0);
+  const padding = { left: 58, right: 24, top: 18, bottom: 34 };
+  const rawMax = Math.max(...months.flatMap(month => [month.income, month.expenses, month.savings]), 0);
+  const rawMin = Math.min(...months.flatMap(month => [month.income, month.expenses, month.savings]), 0);
+  const magnitude = Math.max(Math.abs(rawMax), Math.abs(rawMin), 1);
+  const maxValue = Math.ceil(magnitude / Math.pow(10, Math.max(0, Math.floor(Math.log10(magnitude)) - 1))) * Math.pow(10, Math.max(0, Math.floor(Math.log10(magnitude)) - 1));
+  const minValue = Math.min(rawMin, 0);
   const plotHeight = height - padding.top - padding.bottom;
   const plotWidth = width - padding.left - padding.right;
   const yFor = (value: number) => padding.top + ((maxValue - value) / (maxValue - minValue || 1)) * plotHeight;
   const xFor = (index: number) => padding.left + (months.length === 1 ? plotWidth / 2 : (index / (months.length - 1)) * plotWidth);
-  const incomePath = months.map((month, index) => `${index ? "L" : "M"} ${xFor(index)} ${yFor(month.income)}`).join(" ");
-  const expensesPath = months.map((month, index) => `${index ? "L" : "M"} ${xFor(index)} ${yFor(month.expenses)}`).join(" ");
-  const savingsPath = months.map((month, index) => `${index ? "L" : "M"} ${xFor(index)} ${yFor(month.savings)}`).join(" ");
+  const pointsFor = (series: "income" | "expenses" | "savings") => months.map((month, index) => ({ x: xFor(index), y: yFor(series === "income" ? month.income : series === "expenses" ? month.expenses : month.savings) }));
+  const incomePoints = pointsFor("income");
+  const expensePoints = pointsFor("expenses");
+  const savingsPoints = pointsFor("savings");
+  const incomePath = smoothLine(incomePoints);
+  const expensePath = smoothLine(expensePoints);
+  const savingsPath = smoothLine(savingsPoints);
+  const baseline = yFor(0);
+  const areaPath = (points: { x: number; y: number }[]) => points.length ? `${smoothLine(points)} L ${points[points.length - 1].x} ${baseline} L ${points[0].x} ${baseline} Z` : "";
+  const compactCurrency = (value: number) => {
+    if (Math.abs(value) >= 1000000) return `${value < 0 ? "-" : ""}${currency}${(Math.abs(value) / 1000000).toFixed(1)}m`;
+    if (Math.abs(value) >= 1000) return `${value < 0 ? "-" : ""}${currency}${(Math.abs(value) / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`;
+    return `${value < 0 ? "-" : ""}${currency}${Math.abs(value).toFixed(0)}`;
+  };
 
   return <>
     <p className="finance-chart-caption">
-      {months.length < 2 ? "One recorded month so far; keep logging transactions to reveal a trend." : "Recorded months only · hover points for exact totals"}
+      {months.filter(month => month.income || month.expenses).length < 2 ? "One recorded month so far; keep logging transactions to reveal a trend." : "Recorded activity across the selected period · hover points for exact totals"}
     </p>
     <div className="finance-cashflow-wrap">
-      <svg className="finance-cashflow-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Monthly income, expense, and net savings over ${range} months`}>
+      <svg className="finance-cashflow-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Monthly income, expenses, and net savings over ${range} months`}>
         {[0, 0.25, 0.5, 0.75, 1].map(fraction => {
+          const value = maxValue - ((maxValue - minValue) * fraction);
           const y = padding.top + plotHeight * fraction;
-          return <path className="finance-grid-line" d={`M ${padding.left} ${y} H ${width - padding.right}`} key={fraction} />;
+          return <g key={fraction}><path className="finance-grid-line" d={`M ${padding.left} ${y} H ${width - padding.right}`} /><text className="finance-y-label" x={padding.left - 8} y={y + 3} textAnchor="end">{compactCurrency(value)}</text></g>;
         })}
-        <path className="finance-zero-line" d={`M ${padding.left} ${yFor(0)} H ${width - padding.right}`} />
-        {months.length > 1 && <>
-          <path className="finance-income-line" d={incomePath} />
-          <path className="finance-expense-line" d={expensesPath} />
-        </>}
+        <path className="finance-zero-line" d={`M ${padding.left} ${baseline} H ${width - padding.right}`} />
+        {incomePoints.length > 1 && <><path className="finance-income-area" d={areaPath(incomePoints)} /><path className="finance-expense-area" d={areaPath(expensePoints)} /></>}
+        {incomePoints.length > 1 && <path className="finance-income-line" d={incomePath} />}
+        {incomePoints.length > 1 && <path className="finance-expense-line" d={expensePath} />}
+        {savingsPoints.length > 1 && <path className="finance-savings-line" d={savingsPath} />}
         {months.map((month, index) => {
           const x = xFor(index);
           return <g key={month.key}>
-            <circle className="finance-series-point income-series" cx={x} cy={yFor(month.income)} r="4">
-              <title>{month.label} income: {formatCurrency(month.income, currency)}</title>
-            </circle>
-            <circle className="finance-series-point expense-series" cx={x} cy={yFor(month.expenses)} r="4">
-              <title>{month.label} expenses: {formatCurrency(month.expenses, currency)}</title>
-            </circle>
+            <circle className="finance-series-point income-series" cx={x} cy={yFor(month.income)} r="4"><title>{month.label} income: {formatCurrency(month.income, currency)}</title></circle>
+            <circle className="finance-series-point expense-series" cx={x} cy={yFor(month.expenses)} r="4"><title>{month.label} expenses: {formatCurrency(month.expenses, currency)}</title></circle>
+            <circle className="finance-savings-point" cx={x} cy={yFor(month.savings)} r="4"><title>{month.label} net savings: {formatCurrency(month.savings, currency)}</title></circle>
             <text className="finance-axis-label" x={x} y={height - 7} textAnchor="middle">{month.label}</text>
           </g>;
         })}
-        {months.length > 1 && <path className="finance-savings-line" d={savingsPath} />}
-        {months.map((month, index) => <circle className="finance-savings-point" cx={xFor(index)} cy={yFor(month.savings)} r="4" key={`${month.key}-savings`}>
-          <title>{month.label} net savings: {formatCurrency(month.savings, currency)}</title>
-        </circle>)}
       </svg>
     </div>
     <div className="finance-chart-legend">
@@ -428,10 +455,11 @@ function FinanceAccountOverview({ accounts, currency }: { accounts: Account[]; c
 
   const balances = accounts.map(account => ({ account, balance: ds.getAccountBalance(account.id) }));
   const maxBalance = Math.max(...balances.map(item => Math.abs(item.balance)), 0);
+  const absoluteTotal = balances.reduce((sum, item) => sum + Math.abs(item.balance), 0);
   return <div className="finance-account-overview">
     {balances.map(({ account, balance }) => <div className="finance-account-item" key={account.id}>
-      <div className="finance-account-heading"><span><b>{account.name}</b><small>{account.type.replaceAll("_", " ")}</small></span><strong>{formatCurrency(balance, currency)}</strong></div>
-      <div className="finance-account-track"><i className={balance < 0 ? "negative-balance" : ""} style={{ width: `${maxBalance > 0 ? (Math.abs(balance) / maxBalance) * 100 : 0}%` }} /></div>
+      <div className="finance-account-heading"><span><b>{account.name}</b><small>{account.type.replaceAll("_", " ")}{absoluteTotal > 0 ? ` · ${Math.round((Math.abs(balance) / absoluteTotal) * 100)}% of total` : ""}</small></span><strong>{formatCurrency(balance, currency)}</strong></div>
+      <div className="finance-account-track" title={`${account.name}: ${formatCurrency(balance, currency)}`}><i className={balance < 0 ? "negative-balance" : ""} style={{ width: `${maxBalance > 0 ? (Math.abs(balance) / maxBalance) * 100 : 0}%` }} /></div>
     </div>)}
   </div>;
 }
@@ -756,7 +784,7 @@ export function FinanceView({ onNotify }: ViewProps) {
       </Panel>
       <Panel title="Where spending goes">
         <p className="finance-chart-caption">Top categories this month, ranked by amount</p>
-        <HorizontalBarChart data={topExpenseCategories} emptyText="No expense categories yet." color="#e8754f" formatter={value => formatCurrency(value, currency)} />
+        <HorizontalBarChart data={topExpenseCategories} emptyText="No expense categories yet." color="#e8754f" formatter={value => formatCurrency(value, currency)} showPercentage />
       </Panel>
     </div>
     <div className="dashboard-grid finance-grid">
