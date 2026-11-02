@@ -2,7 +2,7 @@
 
 import { Component, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import * as ds from "@/lib/data-service";
-import type { Account, Category, Goal, Habit, HabitLog, Task, Transaction } from "@/lib/types";
+import type { Account, Category, Goal, Habit, HabitLog, IncomeDistribution, Task, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate, getToday } from "@/lib/utils";
 
 type ViewProps = { onNotify: (message: string) => void };
@@ -616,6 +616,8 @@ export function FinanceView({ onNotify }: ViewProps) {
   const [accountId, setAccountId] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [distributeIncome, setDistributeIncome] = useState(false);
+  const [incomeDistributions, setIncomeDistributions] = useState<IncomeDistribution[]>([]);
   const [newAccountName, setNewAccountName] = useState("");
   const [newAccountType, setNewAccountType] = useState<Account["type"]>("bank");
   const [newAccountBalance, setNewAccountBalance] = useState("0");
@@ -645,10 +647,12 @@ export function FinanceView({ onNotify }: ViewProps) {
     setAccountId(transaction.accountId);
     setDescription(transaction.description);
     setAmount(String(transaction.amount));
+    setDistributeIncome(transaction.type === "income" && Boolean(transaction.distributions?.length));
+    setIncomeDistributions(transaction.distributions?.map(item => ({ ...item })) || []);
   }
 
   function resetForm() {
-    setEditingId(""); setDate(getToday()); setType("expense"); setCategoryId(""); setAccountId(""); setDescription(""); setAmount("");
+    setEditingId(""); setDate(getToday()); setType("expense"); setCategoryId(""); setAccountId(""); setDescription(""); setAmount(""); setDistributeIncome(false); setIncomeDistributions([]);
   }
 
   async function submitAccount(event: FormEvent<HTMLFormElement>) {
@@ -682,7 +686,19 @@ export function FinanceView({ onNotify }: ViewProps) {
       return;
     }
     try {
-      const data = { date, type, categoryId, categoryName: category.name, description: description.trim(), amount: numericAmount, accountId };
+      if (type === "income" && distributeIncome && incomeDistributions.some(item => !item.accountId || !Number.isFinite(Number(item.amount)) || Number(item.amount) <= 0)) {
+        onNotify("Choose an account and enter a positive amount for every allocation.");
+        return;
+      }
+      const distributions = type === "income" && distributeIncome
+        ? incomeDistributions.map(item => ({ accountId: item.accountId, amount: Number(item.amount) }))
+        : [];
+      const allocated = distributions.reduce((sum, item) => sum + item.amount, 0);
+      if (allocated > numericAmount + 0.000001) {
+        onNotify("The distributed amount cannot exceed the income amount.");
+        return;
+      }
+      const data = { date, type, categoryId, categoryName: category.name, description: description.trim(), amount: numericAmount, accountId, distributions };
       if (editingId) {
         if (!await ds.updateTransaction(editingId, data)) throw new Error("That transaction no longer exists.");
         onNotify("Transaction updated.");
@@ -764,6 +780,12 @@ export function FinanceView({ onNotify }: ViewProps) {
           <label>Description<input required maxLength={100} value={description} onChange={event => setDescription(event.target.value)} placeholder="What was this for?" /></label>
           <label>Category<select required value={categoryId} onChange={event => setCategoryId(event.target.value)}><option value="">Choose a category</option>{filteredCategories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
           <label>Account<select required value={accountId} onChange={event => setAccountId(event.target.value)}><option value="">Choose an account</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+          {type === "income" && <div className="income-distribution-toggle"><label><input type="checkbox" checked={distributeIncome} onChange={event => { setDistributeIncome(event.target.checked); if (event.target.checked && !incomeDistributions.length) setIncomeDistributions([{ accountId: "", amount: 0 }]); }} /> Distribute income across accounts</label></div>}
+          {type === "income" && distributeIncome && <div className="income-distribution-editor">
+            <div className="income-distribution-summary"><span>Original: <b>{formatCurrency(Number(amount) || 0, currency)}</b></span><span>Total allocated: <b>{formatCurrency(incomeDistributions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0), currency)}</b></span><span>Remaining: <b>{formatCurrency(Math.max(0, (Number(amount) || 0) - incomeDistributions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)), currency)}</b></span></div>
+            {incomeDistributions.map((allocation, index) => <div className="income-distribution-row" key={index}><label>Account<select value={allocation.accountId} onChange={event => setIncomeDistributions(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, accountId: event.target.value } : item))}><option value="">Choose an account</option>{accounts.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Amount<input type="number" min="0.01" step="0.01" value={allocation.amount || ""} onChange={event => setIncomeDistributions(items => items.map((item, itemIndex) => itemIndex === index ? { ...item, amount: Number(event.target.value) } : item))} /></label><button type="button" className="danger-button" onClick={() => setIncomeDistributions(items => items.filter((_, itemIndex) => itemIndex !== index))} aria-label="Remove allocation">Remove</button></div>)}
+            <button type="button" className="secondary-button" disabled={incomeDistributions.length >= accounts.length} onClick={() => setIncomeDistributions(items => [...items, { accountId: "", amount: 0 }])}>Add account allocation</button>
+          </div>}
           <label>Date<input required type="date" value={date} onChange={event => setDate(event.target.value)} /></label>
           <div className="data-form-actions"><button className="primary-button" type="submit">{editingId ? "Save changes" : "Save transaction"}</button>{editingId && <button type="button" className="secondary-button" onClick={resetForm}>Cancel</button>}</div>
         </form>}
@@ -777,7 +799,7 @@ export function FinanceView({ onNotify }: ViewProps) {
       {accounts.length ? <div className="data-list">{accounts.map(account => <div className="data-list-row" key={account.id}><span><b>{account.name}</b><small>{account.type.replace("_", " ")} · {formatCurrency(ds.getAccountBalance(account.id), currency)} current balance</small></span><button type="button" className="danger-button" onClick={() => void removeAccount(account)}>Remove</button></div>)}</div> : <Empty>No finance accounts yet.</Empty>}
     </Panel></div>
     <div className="data-panel-gap"><Panel title={`Transactions (${transactions.length})`}>
-      {transactions.length ? <div className="data-list">{transactions.map(transaction => <div className="data-list-row" key={transaction.id}><span><b>{transaction.description}</b><small>{formatDate(transaction.date)} · {transaction.categoryName} · {accounts.find(account => account.id === transaction.accountId)?.name || "Account removed"}</small></span><strong className={transaction.type === "expense" ? "amount-expense" : "amount-income"}>{transaction.type === "expense" ? "−" : "+"}{formatCurrency(transaction.amount, currency)}</strong><span className="data-row-actions"><button type="button" onClick={() => editTransaction(transaction)} disabled={transaction.type === "transfer"}>Edit</button><button type="button" onClick={() => removeTransaction(transaction.id)}>Delete</button></span></div>)}</div> : <Empty>No transactions yet. Add your first income or expense above.</Empty>}
+      {transactions.length ? <div className="data-list">{transactions.map(transaction => <div className="data-list-row" key={transaction.id}><span><b>{transaction.description}</b><small>{formatDate(transaction.date)} · {transaction.categoryName} · {accounts.find(account => account.id === transaction.accountId)?.name || "Account removed"}{transaction.type === "income" && transaction.distributions?.length ? ` · Distributed: ${transaction.distributions.map(item => `${accounts.find(account => account.id === item.accountId)?.name || "Account removed"} ${formatCurrency(item.amount, currency)}`).join("; ")}` : ""}</small></span><strong className={transaction.type === "expense" ? "amount-expense" : "amount-income"}>{transaction.type === "expense" ? "−" : "+"}{formatCurrency(transaction.amount, currency)}</strong><span className="data-row-actions"><button type="button" onClick={() => editTransaction(transaction)} disabled={transaction.type === "transfer"}>Edit</button><button type="button" onClick={() => removeTransaction(transaction.id)}>Delete</button></span></div>)}</div> : <Empty>No transactions yet. Add your first income or expense above.</Empty>}
     </Panel></div>
   </div>;
 }

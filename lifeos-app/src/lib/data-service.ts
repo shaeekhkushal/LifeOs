@@ -2,7 +2,7 @@
 // Central API for all data operations. Components import from here.
 
 import { LocalStore, getItem, hydrateCollections, sendDataAction, setItem } from './storage';
-import type { UserProfile, Account, Category, Transaction, Habit, HabitLog, Goal, Task, TrackingEntry, TrackingModule } from './types';
+import type { UserProfile, Account, Category, Transaction, IncomeDistribution, Habit, HabitLog, Goal, Task, TrackingEntry, TrackingModule } from './types';
 import { generateId, getToday, getStartOfMonth, getEndOfMonth, getStartOfWeek } from './utils';
 
 // ── Store instances ──
@@ -95,11 +95,20 @@ export async function deleteAccount(id: string): Promise<boolean> {
 export function getAccountBalance(accountId: string): number {
   const account = accountStore.getById(accountId);
   if (!account) return 0;
-  const transactions = transactionStore.getAll().filter(t => t.accountId === accountId);
   let balance = account.openingBalance;
-  for (const t of transactions) {
-    if (t.type === 'income') balance += t.amount;
-    else if (t.type === 'expense') balance -= t.amount;
+  for (const t of transactionStore.getAll()) {
+    if (t.type === 'income' && t.accountId === accountId) {
+      balance += t.amount;
+      if (t.distributions?.length) {
+        balance -= t.distributions.reduce((sum, item) => sum + item.amount, 0);
+      }
+    }
+    if (t.type === 'expense' && t.accountId === accountId) balance -= t.amount;
+    if (t.type === 'income' && t.distributions?.length) {
+      for (const allocation of t.distributions) {
+        if (allocation.accountId === accountId) balance += allocation.amount;
+      }
+    }
   }
   return balance;
 }
@@ -172,6 +181,21 @@ export function getTransactions(filters?: {
   return items;
 }
 
+function validateIncomeDistributions(amount: number, distributions?: IncomeDistribution[]): IncomeDistribution[] {
+  if (!distributions?.length) return [];
+  let total = 0;
+  const seen = new Set<string>();
+  for (const allocation of distributions) {
+    if (!Number.isFinite(allocation.amount) || allocation.amount <= 0) throw new Error('Each distribution amount must be greater than zero.');
+    if (!accountStore.getById(allocation.accountId)?.isActive) throw new Error('Choose an active account for each distribution.');
+    if (seen.has(allocation.accountId)) throw new Error('Allocate each account only once.');
+    seen.add(allocation.accountId);
+    total += allocation.amount;
+  }
+  if (total > amount + 0.000001) throw new Error('The distributed amount cannot exceed the income amount.');
+  return distributions.map(allocation => ({ ...allocation, amount: Number(allocation.amount.toFixed(2)) }));
+}
+
 export async function addTransaction(data: {
   date: string;
   type: 'income' | 'expense' | 'transfer';
@@ -180,8 +204,10 @@ export async function addTransaction(data: {
   description: string;
   amount: number;
   accountId: string;
+  distributions?: IncomeDistribution[];
   notes?: string;
 }): Promise<Transaction> {
+  if (data.type === 'income') data.distributions = validateIncomeDistributions(data.amount, data.distributions);
   const now = new Date().toISOString();
   return transactionStore.create({
     id: generateId(),
@@ -192,6 +218,7 @@ export async function addTransaction(data: {
     description: data.description,
     amount: data.amount,
     accountId: data.accountId,
+    ...(data.type === 'income' && data.distributions?.length ? { distributions: data.distributions } : {}),
     notes: data.notes || '',
     createdAt: now,
     updatedAt: now,
@@ -199,7 +226,13 @@ export async function addTransaction(data: {
 }
 
 export async function updateTransaction(id: string, data: Partial<Transaction>): Promise<Transaction | undefined> {
-  return transactionStore.update(id, { ...data, updatedAt: new Date().toISOString() });
+  const current = transactionStore.getById(id);
+  if (!current) return undefined;
+  const merged = { ...current, ...data };
+  if (merged.type === 'income') {
+    merged.distributions = validateIncomeDistributions(merged.amount, merged.distributions);
+  }
+  return transactionStore.update(id, { ...merged, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteTransaction(id: string): Promise<boolean> {

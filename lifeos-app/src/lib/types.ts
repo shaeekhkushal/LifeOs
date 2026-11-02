@@ -28,6 +28,11 @@ export interface Category {
   isDefault: boolean;
 }
 
+export interface IncomeDistribution {
+  accountId: string;
+  amount: number;
+}
+
 export interface Transaction {
   id: string;
   date: string;          // YYYY-MM-DD
@@ -37,6 +42,7 @@ export interface Transaction {
   description: string;
   amount: number;
   accountId: string;
+  distributions?: IncomeDistribution[];
   notes: string;
   createdAt: string;
   updatedAt: string;
