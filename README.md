@@ -27,7 +27,7 @@ This README describes the implementation that currently exists in this repositor
 | Productivity | Tasks with scheduled date, optional deadline, priority, and status |
 | Goals | Goal targets, progress updates, dates, priority, and status |
 | Health, Learning, Career, Travel, Shopping, Vehicle, Home, Entertainment, Calendar | Configured tracking-entry views backed by the shared `tracking_entries` collection |
-| Reports | Summary charts and counts based on saved tracking entries, transactions, and habit logs |
+| Reports | Period-filtered overview, activity trends, life-area distribution, goal progress, observations, searchable activity history, CSV export, and printable output based on saved records |
 | Settings | Profile and currency settings, password change, account data reset, and record counts |
 
 The main workspace navigation is rendered by `src/app/page.tsx`. Navigation between these sections is client-side state represented by URL hashes; the sections do not have individual URL routes. Settings is linked from the sidebar footer and is included in the recognized navigation pages.
@@ -95,7 +95,8 @@ LifeOs/
       components/
         AuthView.tsx              Signup, login, and password reset UI
         FeatureViews.tsx          Overview, finance, habits, tasks, goals, settings
-        ModuleView.tsx            Shared tracking modules and reports
+        ModuleView.tsx            Shared tracking-entry modules and Reports view selection
+        ReportsView.tsx           Period-aware reports, goals, insights, and activity history
       lib/
         data-service.ts           Domain operations, filtering, and calculations
         storage.ts                Client cache and /api/data adapter
@@ -112,7 +113,7 @@ LifeOs/
 
 ### UI and navigation
 
-`src/app/page.tsx` restores the session from `/api/auth`, loads the user's records, and chooses which view to render. `AuthView.tsx` handles authentication screens. Feature screens live in `FeatureViews.tsx`; `ModuleView.tsx` provides the shared entry form and reports for the configured tracking modules. Shared styles are in `src/app/globals.css`.
+`src/app/page.tsx` restores the session from `/api/auth`, loads the user's records, and chooses which view to render. `AuthView.tsx` handles authentication screens. Feature screens live in `FeatureViews.tsx`; `ModuleView.tsx` provides the shared entry forms for configured tracking modules. `ReportsView.tsx` combines tracking entries, finance transactions, habits, goals, and tasks into period-aware reporting, insights, and activity history. Shared styles are in `src/app/globals.css`.
 
 ### Data flow
 

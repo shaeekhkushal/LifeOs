@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import * as ds from "@/lib/data-service";
+import ReportsView from "./ReportsView";
 import type { TrackingEntry, TrackingModule } from "@/lib/types";
 import { formatCurrency, formatDate, getEndOfMonth, getStartOfMonth, getToday } from "@/lib/utils";
 
@@ -51,61 +52,6 @@ function downloadCsv(name: string, rows: Array<Array<string | number | null | un
 
 function RecordPanel({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="panel"><div className="panel-heading"><h2>{title}</h2></div>{children}</section>;
-}
-
-function ReportsView({ onNotify }: { onNotify: (message: string) => void }) {
-  const [revision, setRevision] = useState(0);
-  const entries = ds.getTrackingEntries();
-  const renderVersion = revision;
-
-  const transactions = ds.getTransactions();
-  const habitLogs = ds.getHabitLogs();
-  const thisMonthEntries = entries.filter(entry => entry.date >= getStartOfMonth() && entry.date <= getEndOfMonth());
-  const currentMonthEntries = [...thisMonthEntries, ...transactions.filter(transaction => transaction.date >= getStartOfMonth() && transaction.date <= getEndOfMonth())];
-  const monthSeries = Array.from({ length: 6 }, (_, index) => {
-    const monthDate = new Date();
-    monthDate.setDate(1);
-    monthDate.setMonth(monthDate.getMonth() - (5 - index));
-    const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, "0")}`;
-    const count = entries.filter(entry => entry.date.startsWith(key)).length + transactions.filter(transaction => transaction.date.startsWith(key)).length;
-    return { key, label: monthDate.toLocaleDateString("en-US", { month: "short" }), count };
-  });
-  const maxCount = Math.max(...monthSeries.map(month => month.count), 1);
-  const graphPoints = monthSeries.map((month, index) => ({
-    ...month,
-    x: 36 + index * 112,
-    y: 158 - month.count / maxCount * 112,
-  }));
-  const graphLine = graphPoints.map((point, index) => `${index ? "L" : "M"}${point.x},${point.y}`).join(" ");
-  const graphArea = `${graphLine} L${graphPoints[graphPoints.length - 1].x},176 L${graphPoints[0].x},176 Z`;
-  const moduleCounts = Object.keys(moduleCopy).map(module => ({ module, count: entries.filter(entry => entry.module === module).length }));
-  const expenseTotal = transactions.filter(transaction => transaction.type === "expense").reduce((sum, transaction) => sum + transaction.amount, 0);
-  const currency = ds.getProfile()?.currencySymbol || "৳";
-
-  const exportReportCsv = () => {
-    const rows: Array<Array<string | number | null | undefined>> = [
-      ["Date", "Type", "Module", "Title", "Category", "Amount", "Status"],
-      ...entries.map(entry => [entry.date, "Tracking", entry.module, entry.title, entry.category, entry.value ?? "", entry.status]),
-      ...transactions.map(transaction => [transaction.date, transaction.type, "Finance", transaction.description, transaction.categoryName, formatCurrency(transaction.amount, currency), transaction.accountId]),
-    ];
-    downloadCsv("lifeos-report.csv", rows);
-    onNotify("Reports CSV downloaded.");
-  };
-
-  return <div key={renderVersion}>
-    <div className="welcome-row"><div><p className="eyebrow">SEE WHAT THE RECORDS SAY</p><h1>Reports<span>.</span></h1><p className="subheading">A live summary of saved entries, transactions, and habit logs.</p></div><div className="top-actions"><button className="secondary-button" type="button" onClick={exportReportCsv}>Export CSV</button><button className="secondary-button" type="button" onClick={() => window.print()}>Print / PDF</button><button className="secondary-button" type="button" onClick={() => setRevision(value => value + 1)}>Refresh report</button></div></div>
-    <div className="metric-grid report-metrics">
-      <div className="metric-card"><p>TRACKING RECORDS</p><strong className="metric-value">{entries.length}</strong><div className="metric-change">Across all tracking modules</div></div>
-      <div className="metric-card"><p>THIS MONTH</p><strong className="metric-value">{currentMonthEntries.length}</strong><div className="metric-change">Entries and transactions</div></div>
-      <div className="metric-card"><p>RECORDED EXPENSES</p><strong className="metric-value">{formatCurrency(expenseTotal, currency)}</strong><div className="metric-change orange">All saved expense transactions</div></div>
-      <div className="metric-card"><p>HABIT CHECK-INS</p><strong className="metric-value">{habitLogs.length}</strong><div className="metric-change">Dated completion records</div></div>
-    </div>
-    <div className="dashboard-grid report-grid">
-      <RecordPanel title="Activity over six months"><p className="chart-caption">Tracked records and finance transactions by date</p>{entries.length || transactions.length ? <div className="report-chart-wrap"><svg className="report-chart" viewBox="0 0 640 220" role="img" aria-label="Saved activity by month for the last six months" preserveAspectRatio="none"><defs><linearGradient id="activity-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#e8754f" stopOpacity=".28" /><stop offset="100%" stopColor="#e8754f" stopOpacity="0" /></linearGradient></defs><path className="report-chart-area" d={graphArea} /><path className="report-chart-line" d={graphLine} />{graphPoints.map(point => <g key={point.key}><circle className="report-chart-point" cx={point.x} cy={point.y} r="4"><title>{point.label}: {point.count} records</title></circle><text className="report-chart-value" x={point.x} y={point.y - 12} textAnchor="middle">{point.count}</text><text className="report-chart-label" x={point.x} y="202" textAnchor="middle">{point.label}</text></g>)}</svg></div> : <p className="data-empty">No records yet. Add tracked entries or transactions to build a history.</p>}</RecordPanel>
-      <RecordPanel title="Records by module"><div className="report-module-list">{moduleCounts.map(item => <div className="report-module-row" key={item.module}><span>{item.module}</span><div className="report-bar-track"><i style={{ width: `${entries.length ? item.count / Math.max(...moduleCounts.map(row => row.count), 1) * 100 : 0}%` }} /></div><b>{item.count}</b></div>)}</div></RecordPanel>
-    </div>
-    <div className="data-panel-gap"><RecordPanel title="Current month tracking entries">{thisMonthEntries.length ? <div className="data-list">{thisMonthEntries.slice(0, 8).map(entry => <div className="data-list-row" key={entry.id}><span><b>{entry.title}</b><small>{entry.module} · {entry.category} · {formatDate(entry.date)}</small></span><strong>{entry.status}</strong></div>)}</div> : <p className="data-empty">No tracking entries for this month.</p>}</RecordPanel></div>
-  </div>;
 }
 
 export default function ModuleView({ module, onNotify }: ModuleViewProps) {
