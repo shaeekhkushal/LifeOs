@@ -20,9 +20,9 @@ type UserRecord = { id: string; username: string; displayName: string; passwordH
 type StoredRecord = { user_id: string; collection: string; record_id: string; payload: string };
 
 const collections = new Set([
-  "profile", "accounts", "categories", "transactions", "habits", "habit_logs",
-  "goals", "tasks", "tracking_entries",
+  "profile", "accounts", "categories", "transactions", "goals", "tasks", "tracking_entries",
 ]);
+const removedTrackingModules = new Set(["Health", "Habits", "Vehicle", "Entertainment", "Home"]);
 const sessionLifetimeMs = 1000 * 60 * 60 * 24 * 30;
 const globalDatabase = globalThis as typeof globalThis & { lifeosDatabase?: SqliteDatabase };
 
@@ -209,7 +209,13 @@ export function listRecords(userId: string): Record<string, Record<string, unkno
     .all(userId) as Pick<StoredRecord, "collection" | "payload">[];
   const result: Record<string, Record<string, unknown>[]> = {};
   for (const collection of collections) result[collection] = [];
-  for (const row of rows) result[row.collection].push(JSON.parse(row.payload) as Record<string, unknown>);
+  for (const row of rows) {
+    const records = result[row.collection];
+    if (!records) continue;
+    const record = JSON.parse(row.payload) as Record<string, unknown>;
+    if (row.collection === "tracking_entries" && typeof record.module === "string" && removedTrackingModules.has(record.module)) continue;
+    records.push(record);
+  }
   return result;
 }
 

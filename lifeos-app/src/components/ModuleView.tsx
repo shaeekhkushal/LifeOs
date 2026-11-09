@@ -19,14 +19,10 @@ const moduleCopy: Record<TrackingModule, {
   unitLabel?: string;
   amountLabel?: string;
 }> = {
-  Health: { eyebrow: "YOUR WELLBEING", title: "Health overview", description: "Keep a useful record of health signals and routines over time.", itemLabel: "Metric or note", dateLabel: "Recorded on", categoryLabel: "Metric type", statusLabel: "Record", statuses: ["Logged", "Follow-up"], valueLabel: "Measurement", unitLabel: "Unit" },
   Learning: { eyebrow: "STAY CURIOUS", title: "Learning library", description: "Track the skills, courses, and ideas you are working through.", itemLabel: "Course or skill", dateLabel: "Target date", categoryLabel: "Topic", statusLabel: "Progress", statuses: ["Planned", "In progress", "Completed", "Paused"] },
   Career: { eyebrow: "WORK WITH INTENTION", title: "Career", description: "Keep milestones, applications, and professional development in view.", itemLabel: "Milestone", dateLabel: "Date", categoryLabel: "Career area", statusLabel: "Status", statuses: ["Planned", "In progress", "Completed", "Paused"] },
   Travel: { eyebrow: "PLACES TO GO", title: "Travel planner", description: "Keep trip plans, destinations, and spending in one local record.", itemLabel: "Trip or destination", dateLabel: "Start date", categoryLabel: "Trip type", statusLabel: "Status", statuses: ["Considering", "Planned", "Booked", "Completed", "Cancelled"], amountLabel: "Estimated or actual cost" },
   Shopping: { eyebrow: "BUY LESS, CHOOSE WELL", title: "Shopping list", description: "Keep planned purchases visible and compare them with what you actually spend.", itemLabel: "Item", dateLabel: "Added on", categoryLabel: "Category", statusLabel: "Status", statuses: ["Needed", "Purchased", "Skipped"], amountLabel: "Price" },
-  Vehicle: { eyebrow: "KEEP MOVING", title: "Vehicle log", description: "Track maintenance, mileage, and the cost of keeping your vehicle moving.", itemLabel: "Service or note", dateLabel: "Service date", categoryLabel: "Vehicle / service type", statusLabel: "Status", statuses: ["Due", "Scheduled", "Completed"], valueLabel: "Odometer", unitLabel: "Unit", amountLabel: "Cost" },
-  Home: { eyebrow: "YOUR BASECAMP", title: "Home management", description: "Record home tasks and costs, then keep the next useful action visible.", itemLabel: "Task or item", dateLabel: "Date", categoryLabel: "Area", statusLabel: "Status", statuses: ["Planned", "In progress", "Completed"], amountLabel: "Cost" },
-  Entertainment: { eyebrow: "MAKE TIME FOR JOY", title: "Entertainment", description: "Remember what you watched, read, played, or experienced.", itemLabel: "Title or experience", dateLabel: "Date", categoryLabel: "Format", statusLabel: "Status", statuses: ["Planned", "Completed"], amountLabel: "Cost" },
   Calendar: { eyebrow: "THE SHAPE OF YOUR TIME", title: "Calendar", description: "Keep appointments and important dates alongside your everyday records.", itemLabel: "Event", dateLabel: "Event date", categoryLabel: "Event type", statusLabel: "Status", statuses: ["Planned", "Completed", "Cancelled"] },
 };
 
@@ -71,7 +67,7 @@ function TrackingModuleView({ module, onNotify }: { module: TrackingModule; onNo
   const [date, setDate] = useState(getToday());
   const [status, setStatus] = useState(config.statuses[0]);
   const [value, setValue] = useState("");
-  const [unit, setUnit] = useState(module === "Health" ? "hours" : "km");
+  const [unit, setUnit] = useState("km");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
   const [search, setSearch] = useState("");

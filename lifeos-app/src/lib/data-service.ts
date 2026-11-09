@@ -2,15 +2,13 @@
 // Central API for all data operations. Components import from here.
 
 import { LocalStore, getItem, hydrateCollections, sendDataAction, setItem } from './storage';
-import type { UserProfile, Account, Category, Transaction, IncomeDistribution, Habit, HabitLog, Goal, Task, TrackingEntry, TrackingModule } from './types';
-import { generateId, getToday, getStartOfMonth, getEndOfMonth, getStartOfWeek } from './utils';
+import type { UserProfile, Account, Category, Transaction, IncomeDistribution, Goal, Task, TrackingEntry, TrackingModule } from './types';
+import { generateId, getToday, getStartOfMonth, getEndOfMonth } from './utils';
 
 // ── Store instances ──
 const accountStore = new LocalStore<Account>('accounts');
 const categoryStore = new LocalStore<Category>('categories');
 const transactionStore = new LocalStore<Transaction>('transactions');
-const habitStore = new LocalStore<Habit>('habits');
-const habitLogStore = new LocalStore<HabitLog>('habit_logs');
 const goalStore = new LocalStore<Goal>('goals');
 const taskStore = new LocalStore<Task>('tasks');
 const trackingEntryStore = new LocalStore<TrackingEntry>('tracking_entries');
@@ -284,133 +282,6 @@ export function getRecentTransactions(limit: number = 10): Transaction[] {
 }
 
 // ════════════════════════════════════════════
-// HABITS
-// ════════════════════════════════════════════
-
-export function getHabits(activeOnly: boolean = true): Habit[] {
-  const all = habitStore.getAll();
-  return activeOnly ? all.filter(h => h.isActive) : all;
-}
-
-export async function addHabit(data: { name: string; category: string; frequency: 'daily' | 'weekly'; targetPerWeek: number }): Promise<Habit> {
-  const now = new Date().toISOString();
-  return habitStore.create({
-    id: generateId(),
-    name: data.name,
-    category: data.category,
-    frequency: data.frequency,
-    targetPerWeek: data.targetPerWeek,
-    isActive: true,
-    createdAt: now,
-    updatedAt: now,
-  });
-}
-
-export async function updateHabit(id: string, data: Partial<Habit>): Promise<Habit | undefined> {
-  return habitStore.update(id, { ...data, updatedAt: new Date().toISOString() });
-}
-
-export async function deleteHabit(id: string): Promise<boolean> {
-  // Also delete all logs for this habit
-  const logIds = habitLogStore.getAll().filter(log => log.habitId === id).map(log => log.id);
-  await habitLogStore.deleteMany(logIds);
-  return habitStore.delete(id);
-}
-
-export function getHabitLogs(habitId?: string, startDate?: string, endDate?: string): HabitLog[] {
-  let logs = habitLogStore.getAll();
-  if (habitId) logs = logs.filter(l => l.habitId === habitId);
-  if (startDate) logs = logs.filter(l => l.date >= startDate);
-  if (endDate) logs = logs.filter(l => l.date <= endDate);
-  return logs;
-}
-
-export async function toggleHabit(habitId: string, date?: string): Promise<boolean> {
-  const d = date || getToday();
-  const existing = habitLogStore.getAll().find(l => l.habitId === habitId && l.date === d);
-
-  if (existing) {
-    if (existing.completed) {
-      // Un-complete: delete the log
-      await habitLogStore.delete(existing.id);
-      return false;
-    } else {
-      await habitLogStore.update(existing.id, { completed: true });
-      return true;
-    }
-  } else {
-    await habitLogStore.create({
-      id: generateId(),
-      habitId,
-      date: d,
-      completed: true,
-      notes: '',
-      createdAt: new Date().toISOString(),
-    });
-    return true;
-  }
-}
-
-export function isHabitCompletedToday(habitId: string): boolean {
-  const today = getToday();
-  const log = habitLogStore.getAll().find(l => l.habitId === habitId && l.date === today && l.completed);
-  return !!log;
-}
-
-export function getHabitStreak(habitId: string): number {
-  const logs = habitLogStore.getAll()
-    .filter(l => l.habitId === habitId && l.completed)
-    .map(l => l.date)
-    .sort()
-    .reverse();
-
-  if (logs.length === 0) return 0;
-
-  let streak = 0;
-  const today = getToday();
-  let checkDate = today;
-
-  // If not completed today, start checking from yesterday
-  if (!logs.includes(today)) {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    checkDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-    if (!logs.includes(checkDate)) return 0;
-  }
-
-  // Count consecutive days backwards
-  const d = new Date(checkDate + 'T00:00:00');
-  while (logs.includes(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)) {
-    streak++;
-    d.setDate(d.getDate() - 1);
-  }
-
-  return streak;
-}
-
-export function getHabitWeeklyCompletion(habitId: string): { completed: number; target: number } {
-  const habit = habitStore.getById(habitId);
-  if (!habit) return { completed: 0, target: 7 };
-
-  const weekStart = getStartOfWeek();
-  const today = getToday();
-  const logs = getHabitLogs(habitId, weekStart, today).filter(l => l.completed);
-
-  return { completed: logs.length, target: habit.targetPerWeek };
-}
-
-export function getOverallHabitCompletion(): number {
-  const habits = getHabits();
-  if (habits.length === 0) return 0;
-
-  let completed = 0;
-  for (const habit of habits) {
-    if (isHabitCompletedToday(habit.id)) completed++;
-  }
-  return Math.round((completed / habits.length) * 100);
-}
-
-// ════════════════════════════════════════════
 // GOALS
 // ════════════════════════════════════════════
 
@@ -557,8 +428,9 @@ export function getTaskStats(): { total: number; completed: number; inProgress: 
 
 export function getTrackingEntries(module?: TrackingModule): TrackingEntry[] {
   const entries = trackingEntryStore.getAll();
+  const removedModules: ReadonlySet<string> = new Set(["Health", "Habits", "Vehicle", "Entertainment", "Home"]);
   return entries
-    .filter(entry => !module || entry.module === module)
+    .filter(entry => !removedModules.has(entry.module) && (!module || entry.module === module))
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 }
 
@@ -621,7 +493,6 @@ export async function clearAllData(): Promise<void> {
 
 export function getDataSummary(): {
   transactions: number;
-  habits: number;
   goals: number;
   tasks: number;
   accounts: number;
@@ -629,10 +500,9 @@ export function getDataSummary(): {
 } {
   return {
     transactions: transactionStore.count(),
-    habits: habitStore.count(),
     goals: goalStore.count(),
     tasks: taskStore.count(),
     accounts: accountStore.count(),
-    trackingEntries: trackingEntryStore.count(),
+    trackingEntries: getTrackingEntries().length,
   };
 }

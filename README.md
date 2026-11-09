@@ -1,6 +1,6 @@
 # LifeOS
 
-LifeOS is a local-first personal tracking application. A signed-in user can record finances, habits, goals, tasks, and entries for other areas of life. The app is a Next.js application hosted by Node.js; user accounts and records are stored in a project-local SQLite database, not a hosted cloud service.
+LifeOS is a local-first personal tracking application. A signed-in user can record finances, goals, tasks, and entries for supported areas of life. The app is a Next.js application hosted by Node.js; user accounts and records are stored in a project-local SQLite database, not a hosted cloud service.
 
 This README describes the implementation that currently exists in this repository. Some workspace sections share a configurable tracking-entry interface; they are not all separate, domain-specific applications.
 
@@ -21,12 +21,11 @@ This README describes the implementation that currently exists in this repositor
 
 | Area | Current implementation |
 | --- | --- |
-| Overview | Monthly income, expenses, savings, and balance; transaction trends and categories; habit consistency heatmap; goal progress; task status; and recent records |
+| Overview | Monthly income, expenses, savings, and balance; transaction trends and categories; goal progress; task status; and recent records |
 | Finance | Accounts, categories, income and expense transactions, spending summaries, and cash-flow charts filtered by a shared date-range selector |
-| Habits | Daily or weekly habits, dated check-ins, streaks, and completion summaries |
 | Productivity | Tasks with scheduled date, optional deadline, priority, and status; scheduled-task charts use the shared date-range selector |
 | Goals | Goal targets, progress updates, dates, priority, and status |
-| Health, Learning, Career, Travel, Shopping, Vehicle, Home, Entertainment, Calendar | Configured tracking-entry views backed by the shared `tracking_entries` collection |
+| Learning, Career, Travel, Shopping, Calendar | Configured tracking-entry views backed by the shared `tracking_entries` collection |
 | Reports | Period-filtered overview, activity trends, life-area distribution, goal progress, observations, searchable activity history, CSV export, and printable output based on saved records |
 | Settings | Profile and currency settings, password change, account data reset, and record counts |
 
@@ -94,7 +93,7 @@ LifeOs/
           data/route.ts           Authenticated record load and mutation API
       components/
         AuthView.tsx              Signup, login, and password reset UI
-        FeatureViews.tsx          Overview, finance, habits, tasks, goals, settings
+        FeatureViews.tsx          Overview, finance, tasks, goals, settings
         ModuleView.tsx            Shared tracking-entry modules and Reports view selection
         ReportsView.tsx           Period-aware reports, goals, insights, and activity history
       lib/
@@ -113,7 +112,7 @@ LifeOs/
 
 ### UI and navigation
 
-`src/app/page.tsx` restores the session from `/api/auth`, loads the user's records, and chooses which view to render. `AuthView.tsx` handles authentication screens. Feature screens live in `FeatureViews.tsx`; `ModuleView.tsx` provides the shared entry forms for configured tracking modules. `ReportsView.tsx` combines tracking entries, finance transactions, habits, goals, and tasks into period-aware reporting, insights, and activity history. Shared styles are in `src/app/globals.css`.
+`src/app/page.tsx` restores the session from `/api/auth`, loads the user's records, and chooses which view to render. `AuthView.tsx` handles authentication screens. Feature screens live in `FeatureViews.tsx`; `ModuleView.tsx` provides the shared entry forms for configured tracking modules. `ReportsView.tsx` combines supported tracking entries, finance transactions, goals, and tasks into period-aware reporting, insights, and activity history. Shared styles are in `src/app/globals.css`.
 
 ### Data flow
 
@@ -148,7 +147,7 @@ The server creates `lifeos-app/data/lifeos.sqlite` on first database access. It 
 - `sessions` stores session-token hashes and expiration times.
 - `user_records` stores JSON payloads keyed by user, collection, and record ID.
 
-Supported record collections are `profile`, `accounts`, `categories`, `transactions`, `habits`, `habit_logs`, `goals`, `tasks`, and `tracking_entries`. Shared TypeScript interfaces are in `src/lib/types.ts`.
+Supported record collections are `profile`, `accounts`, `categories`, `transactions`, `goals`, `tasks`, and `tracking_entries`. Shared TypeScript interfaces are in `src/lib/types.ts`. Records saved by removed features are not loaded or shown, but remain in existing SQLite or browser storage; removing those features does not delete saved data.
 
 To back up data, stop the server and copy the `lifeos-app/data/` directory somewhere private. Do not commit it. Deleting data in Settings clears the signed-in account's records and recreates its defaults; it does not delete the account or another user's records.
 

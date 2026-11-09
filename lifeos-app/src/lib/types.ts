@@ -48,26 +48,6 @@ export interface Transaction {
   updatedAt: string;
 }
 
-export interface Habit {
-  id: string;
-  name: string;
-  category: string;
-  frequency: 'daily' | 'weekly';
-  targetPerWeek: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface HabitLog {
-  id: string;
-  habitId: string;
-  date: string;          // YYYY-MM-DD
-  completed: boolean;
-  notes: string;
-  createdAt: string;
-}
-
 export interface Goal {
   id: string;
   title: string;
@@ -98,14 +78,10 @@ export interface Task {
 }
 
 export type TrackingModule =
-  | 'Health'
   | 'Learning'
   | 'Career'
   | 'Travel'
   | 'Shopping'
-  | 'Vehicle'
-  | 'Home'
-  | 'Entertainment'
   | 'Calendar';
 
 export interface TrackingEntry {

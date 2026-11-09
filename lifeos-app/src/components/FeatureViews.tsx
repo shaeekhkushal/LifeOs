@@ -2,7 +2,7 @@
 
 import { Component, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import * as ds from "@/lib/data-service";
-import type { Account, Category, Goal, Habit, HabitLog, IncomeDistribution, Task, Transaction } from "@/lib/types";
+import type { Account, Category, Goal, IncomeDistribution, Task, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate, getToday } from "@/lib/utils";
 import DateRangeFilter from "@/components/DateRangeFilter";
 import { dateRangeKey, daysInclusive, getDateRange, type DateRangePeriod } from "@/lib/date-range";
@@ -124,62 +124,6 @@ function OverviewMonthlyComparison({ transactions, currency }: { transactions: T
       ))}
     </div>
     <div className="overview-chart-legend"><span><i className="income-legend" />Income</span><span><i className="expense-legend" />Expenses</span></div>
-  </>;
-}
-
-function OverviewHabitHeatmap({ habits, logs }: { habits: Habit[]; logs: HabitLog[] }) {
-  if (!habits.length) return <Empty>No habit data available yet.</Empty>;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const currentWeekStart = new Date(today);
-  currentWeekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  currentWeekStart.setDate(currentWeekStart.getDate() - 35);
-  const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-  const activeHabitIds = new Set(habits.map(habit => habit.id));
-  const firstDay = dateKey(currentWeekStart);
-  const todayKey = dateKey(today);
-  const recentLogs = logs.filter(log => log.completed && activeHabitIds.has(log.habitId) && log.date >= firstDay && log.date <= todayKey);
-
-  if (!recentLogs.length) {
-    return <Empty>{logs.some(log => log.completed && activeHabitIds.has(log.habitId)) ? "No habit check-ins in the last six weeks." : "No habit check-ins recorded yet."}</Empty>;
-  }
-
-  const completedByDate = new Map<string, Set<string>>();
-  for (const log of recentLogs) {
-    const completed = completedByDate.get(log.date) || new Set<string>();
-    completed.add(log.habitId);
-    completedByDate.set(log.date, completed);
-  }
-  const maxDailyCheckIns = Math.max(...Array.from(completedByDate.values(), completed => completed.size), 1);
-
-  const weeks = Array.from({ length: 6 }, (_, weekIndex) =>
-    Array.from({ length: 7 }, (_, dayIndex) => {
-      const date = new Date(currentWeekStart);
-      date.setDate(currentWeekStart.getDate() + weekIndex * 7 + dayIndex);
-      const key = dateKey(date);
-      const eligibleHabits = habits.filter(habit => habit.createdAt.slice(0, 10) <= key).length;
-      const completed = completedByDate.get(key)?.size || 0;
-      const level = eligibleHabits ? Math.min(4, Math.ceil((completed / maxDailyCheckIns) * 4)) : 0;
-      return { key, label: date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }), eligibleHabits, completed, level, future: key > todayKey };
-    }),
-  );
-
-  return <>
-    <p className="overview-chart-caption">Daily habit check-ins · last six weeks</p>
-    <div className="overview-heatmap-weekdays" aria-hidden="true">{["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => <span key={day}>{day}</span>)}</div>
-    <div className="overview-heatmap">
-      {weeks.flatMap(week => week.map(day => (
-        <span
-          className={`overview-heat-cell level-${day.level}${day.future || !day.eligibleHabits ? " heat-cell-muted" : ""}`}
-          key={day.key}
-          title={day.future ? `${day.label}: not yet` : `${day.label}: ${day.completed} habit check-ins`}
-          aria-label={day.future ? `${day.label}, not yet` : `${day.label}, ${day.completed} habit check-ins`}
-          role="img"
-        />
-      )))}
-    </div>
-    <div className="overview-heatmap-legend"><span>Less</span>{[0, 1, 2, 3, 4].map(level => <i className={`level-${level}`} key={level} />)}<span>More</span></div>
   </>;
 }
 
@@ -596,26 +540,22 @@ function TaskActivityHeatmap({ tasks }: { tasks: Task[] }) {
 export function Dashboard({ onNavigate }: DashboardProps) {
   const currency = ds.getProfile()?.currencySymbol || "৳";
   const transactions = ds.getTransactions();
-  const habits = ds.getHabits();
-  const habitLogs = ds.getHabitLogs();
   const tasks = ds.getTasks();
   const todaysTasks = ds.getTasks({ date: getToday() });
   const goals = ds.getGoals("active");
   const income = ds.getMonthlyIncome();
   const expenses = ds.getMonthlyExpenses();
   const savings = ds.getMonthlySavings();
-  const currentHabitCompletion = habits.length ? ds.getOverallHabitCompletion() : 0;
   const transactionsByCategory = ds.getExpensesByCategory().slice(0, 5).map(item => ({
     label: item.categoryName,
     value: item.amount,
   }));
   const activeGoals = goals.length;
-  const completedToday = habits.filter(habit => ds.isHabitCompletedToday(habit.id)).length;
 
   return (
     <div>
       <div className="welcome-row">
-        <div><p className="eyebrow">YOUR LIFE, IN PERSPECTIVE</p><h1>Life overview<span>.</span></h1><p className="subheading">A current snapshot of your finances, habits, goals, and tasks.</p></div>
+        <div><p className="eyebrow">YOUR LIFE, IN PERSPECTIVE</p><h1>Life overview<span>.</span></h1><p className="subheading">A current snapshot of your finances, goals, and tasks.</p></div>
         <button className="primary-button" onClick={() => onNavigate("Finance")}>Add transaction <span>+</span></button>
       </div>
       <div className="metric-grid overview-metrics overview-metrics-financial">
@@ -623,10 +563,6 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <div className="metric-card"><p>MONTHLY EXPENSES</p><strong className="metric-value">{formatCurrency(expenses, currency)}</strong><div className="metric-change orange">From recorded expenses</div></div>
         <div className="metric-card"><p>MONTHLY SAVINGS</p><strong className="metric-value">{formatCurrency(savings, currency)}</strong><div className="metric-change">Income minus expenses</div></div>
         <div className="metric-card"><p>ACCOUNT BALANCE</p><strong className="metric-value">{formatCurrency(ds.getTotalBalance(), currency)}</strong><div className="metric-change">Across active accounts</div></div>
-      </div>
-      <div className="metric-grid overview-metrics overview-metrics-life">
-        <div className="metric-card"><p>HABITS COMPLETED TODAY</p><strong className="metric-value">{habits.length ? `${currentHabitCompletion}%` : "0%"}</strong><div className="metric-change">{habits.length ? `${completedToday} of ${habits.length} habits` : "No habits created"}</div></div>
-        <div className="metric-card"><p>ACTIVE GOALS</p><strong className="metric-value">{activeGoals}</strong><div className="metric-change">Current goal targets</div></div>
       </div>
       <div className="dashboard-grid overview-grid">
         <Panel title="Income vs expenses">
@@ -638,10 +574,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </Panel>
       </div>
       <div className="dashboard-grid overview-grid">
-        <Panel title="Habit consistency">
-          <OverviewHabitHeatmap habits={habits} logs={habitLogs} />
-        </Panel>
-        <Panel title="Goal progress">
+        <Panel title={`Goal progress (${activeGoals} active)`}>
           <OverviewGoalProgress goals={goals} onNavigate={onNavigate} />
         </Panel>
       </div>
@@ -866,30 +799,6 @@ export function FinanceView({ onNotify }: ViewProps) {
     <div className="data-panel-gap"><Panel title={`Transactions (${transactions.length})`}>
       {transactions.length ? <div className="data-list">{transactions.map(transaction => <div className="data-list-row" key={transaction.id}><span><b>{transaction.description}</b><small>{formatDate(transaction.date)} · {transaction.categoryName} · {accounts.find(account => account.id === transaction.accountId)?.name || "Account removed"}{transaction.type === "income" && transaction.distributions?.length ? ` · Distributed: ${transaction.distributions.map(item => `${accounts.find(account => account.id === item.accountId)?.name || "Account removed"} ${formatCurrency(item.amount, currency)}`).join("; ")}` : ""}</small></span><strong className={transaction.type === "expense" ? "amount-expense" : "amount-income"}>{transaction.type === "expense" ? "−" : "+"}{formatCurrency(transaction.amount, currency)}</strong><span className="data-row-actions"><button type="button" onClick={() => editTransaction(transaction)} disabled={transaction.type === "transfer"}>Edit</button><button type="button" onClick={() => removeTransaction(transaction.id)}>Delete</button></span></div>)}</div> : <Empty>No transactions yet. Add your first income or expense above.</Empty>}
     </Panel></div>
-  </div>;
-}
-
-export function HabitsView({ onNotify }: ViewProps) {
-  const [revision, setRevision] = useState(0);
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("Personal");
-  const [frequency, setFrequency] = useState<"daily" | "weekly">("daily");
-  const [target, setTarget] = useState("7");
-  const habits = ds.getHabits();
-  const refresh = () => setRevision(value => value + 1);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const targetPerWeek = Number(target);
-    if (!name.trim() || !Number.isInteger(targetPerWeek) || targetPerWeek < 1 || targetPerWeek > 7) { onNotify("Enter a habit name and a weekly target from 1 to 7."); return; }
-    try { await ds.addHabit({ name: name.trim(), category, frequency, targetPerWeek }); setName(""); refresh(); onNotify("Habit added."); }
-    catch (error) { onNotify(ErrorMessage(error, "Unable to add the habit.")); }
-  }
-
-  return <div key={revision}>
-    <div className="welcome-row"><div><p className="eyebrow">SMALL PROMISES, KEPT</p><h1>Habits<span>.</span></h1><p className="subheading">Track consistency with dated completion records.</p></div></div>
-    <div className="feature-grid"><Panel title="Create a habit"><form className="data-form" onSubmit={submit}><label>Habit name<input required maxLength={80} value={name} onChange={event => setName(event.target.value)} placeholder="e.g. Walk outside" /></label><label>Category<input value={category} onChange={event => setCategory(event.target.value)} maxLength={40} /></label><label>Frequency<select value={frequency} onChange={event => setFrequency(event.target.value as "daily" | "weekly")}><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label><label>Target per week<input type="number" min="1" max="7" step="1" required value={target} onChange={event => setTarget(event.target.value)} /></label><button className="primary-button" type="submit">Add habit</button></form></Panel><Panel title="Today’s progress"><strong className="metric-value">{habits.length ? `${ds.getOverallHabitCompletion()}%` : "0%"}</strong><p className="subheading">{habits.filter(habit => ds.isHabitCompletedToday(habit.id)).length} of {habits.length} habits completed today</p></Panel></div>
-    <div className="data-panel-gap"><Panel title={`Your habits (${habits.length})`}>{habits.length ? <div className="data-list">{habits.map(habit => { const completed = ds.isHabitCompletedToday(habit.id); return <div className="data-list-row" key={habit.id}><span><b>{habit.name}</b><small>{habit.category} · {habit.frequency} · {ds.getHabitStreak(habit.id)} day streak</small></span><button type="button" className={completed ? "secondary-button" : "primary-button"} onClick={async () => { try { await ds.toggleHabit(habit.id); refresh(); onNotify(completed ? "Completion removed." : "Habit marked complete."); } catch (error) { onNotify(ErrorMessage(error, "Unable to update habit.")); } }}>{completed ? "Undo today" : "Complete today"}</button><button type="button" className="danger-button" onClick={async () => { if (!window.confirm(`Delete ${habit.name} and its completion history?`)) return; try { if (!await ds.deleteHabit(habit.id)) throw new Error("That habit no longer exists."); refresh(); onNotify("Habit deleted."); } catch (error) { onNotify(ErrorMessage(error, "Unable to delete habit.")); } }}>Delete</button></div>; })}</div> : <Empty>No habits created yet.</Empty>}</Panel></div>
   </div>;
 }
 

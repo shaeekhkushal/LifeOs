@@ -3,23 +3,22 @@
 import { useMemo, useState, useEffect } from "react";
 import * as ds from "@/lib/data-service";
 import AuthView, { type AuthUser } from "@/components/AuthView";
-import { Dashboard, DataErrorBoundary, FinanceView, HabitsView, GoalsView, SettingsView, TasksView } from "@/components/FeatureViews";
+import { Dashboard, DataErrorBoundary, FinanceView, GoalsView, SettingsView, TasksView } from "@/components/FeatureViews";
 import ModuleView from "@/components/ModuleView";
 import { resetClientCache } from "@/lib/storage";
 
 const navigation: [string, string][] = [
-  ["Overview", "O"], ["Finance", "$"], ["Health", "+"], ["Habits", "✓"],
+  ["Overview", "O"], ["Finance", "$"],
   ["Productivity", "▤"], ["Goals", "◎"], ["Learning", "L"], ["Career", "↗"],
-  ["Travel", "✈"], ["Shopping", "□"], ["Vehicle", "V"], ["Home", "⌂"],
-  ["Entertainment", "▶"], ["Calendar", "▦"], ["Reports", "▥"],
+  ["Travel", "✈"], ["Shopping", "□"],
+  ["Calendar", "▦"], ["Reports", "▥"],
 ];
 
 const IMPLEMENTED_MODULES = [
-  "Overview", "Finance", "Health", "Habits", "Productivity", "Goals",
-  "Learning", "Career", "Travel", "Shopping", "Vehicle", "Home",
-  "Entertainment", "Calendar", "Reports", "Settings",
+  "Overview", "Finance", "Productivity", "Goals", "Learning", "Career",
+  "Travel", "Shopping", "Calendar", "Reports", "Settings",
 ];
-const DEDICATED_MODULES = ["Overview", "Finance", "Habits", "Goals", "Productivity", "Settings"];
+const DEDICATED_MODULES = ["Overview", "Finance", "Goals", "Productivity", "Settings"];
 const ROUTABLE_PAGES = [...navigation.map(([label]) => label), "Settings"];
 
 function normalizePage(page: string): string {
@@ -278,9 +277,6 @@ export default function Home() {
           )}
           {active === "Finance" && (
             <FinanceView onNotify={notify} />
-          )}
-          {active === "Habits" && (
-            <HabitsView onNotify={notify} />
           )}
           {active === "Goals" && (
             <GoalsView onNotify={notify} />

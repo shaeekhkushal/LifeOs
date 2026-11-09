@@ -122,7 +122,7 @@ export async function removeItem(key: string): Promise<void> {
   collectionCache.delete(`lifeos_${key}`);
 }
 
-const legacyKeys = ['profile', 'accounts', 'categories', 'transactions', 'habits', 'habit_logs', 'goals', 'tasks', 'tracking_entries'];
+const legacyKeys = ['profile', 'accounts', 'categories', 'transactions', 'goals', 'tasks', 'tracking_entries'];
 
 export function readLegacyData(): Record<string, unknown> {
   if (typeof window === 'undefined') return {};

@@ -10,7 +10,7 @@ type Tab = "Overview" | "Activity & trends" | "Goals & progress" | "Life areas" 
 type Activity = { id: string; date: string; module: string; activity: string; description: string; status: string; amount?: number };
 
 const tabs: Tab[] = ["Overview", "Activity & trends", "Goals & progress", "Life areas", "Insights", "History"];
-const modules = ["Finance", "Health", "Habits", "Goals", "Productivity", "Learning", "Career", "Travel", "Shopping", "Vehicle", "Home", "Entertainment", "Calendar"];
+const modules = ["Finance", "Goals", "Productivity", "Learning", "Career", "Travel", "Shopping", "Calendar"];
 
 function addDays(date: Date, days: number) { const copy = new Date(date); copy.setDate(copy.getDate() + days); return copy; }
 
@@ -59,8 +59,6 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
 
   const entries = ds.getTrackingEntries();
   const transactions = ds.getTransactions();
-  const habitLogs = ds.getHabitLogs();
-  const habits = ds.getHabits(false);
   const goals = ds.getGoals();
   const tasks = ds.getTasks();
   const { start, end } = getDateRange(period, customStart, customEnd);
@@ -71,16 +69,13 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
   const activities = useMemo<Activity[]>(() => {
     const result: Activity[] = entries.map(entry => ({ id: entry.id, date: entry.date, module: entry.module, activity: "Tracking record", description: entry.title, status: entry.status, amount: entry.amount ?? undefined }));
     transactions.forEach(transaction => result.push({ id: transaction.id, date: transaction.date, module: "Finance", activity: transaction.type === "expense" ? "Expense" : transaction.type === "income" ? "Income" : "Transfer", description: transaction.description || transaction.categoryName, status: transaction.type, amount: transaction.amount }));
-    habitLogs.filter(log => log.completed).forEach(log => { const habit = habits.find(item => item.id === log.habitId); result.push({ id: log.id, date: log.date, module: "Habits", activity: "Habit check-in", description: habit?.name || "Habit", status: "Completed" }); });
     goals.filter(goal => goal.status === "completed" && goal.updatedAt).forEach(goal => result.push({ id: goal.id, date: goal.updatedAt.slice(0, 10), module: "Goals", activity: "Goal milestone", description: goal.title, status: "Completed" }));
     tasks.filter(task => task.status === "completed").forEach(task => result.push({ id: task.id, date: task.date || task.updatedAt.slice(0, 10), module: "Productivity", activity: "Task completed", description: task.title, status: "Completed" }));
     return result.sort((a, b) => b.date.localeCompare(a.date));
-  }, [entries, transactions, habitLogs, habits, goals, tasks]);
+  }, [entries, transactions, goals, tasks]);
 
   const currentActivities = activities.filter(item => inRange(item.date, start, end));
   const previousActivities = activities.filter(item => inRange(item.date, previous.start, previous.end));
-  const currentHabitLogs = habitLogs.filter(log => log.completed && inRange(log.date, start, end));
-  const previousHabitLogs = habitLogs.filter(log => log.completed && inRange(log.date, previous.start, previous.end));
   const currentExpenses = transactions.filter(transaction => transaction.type === "expense" && inRange(transaction.date, start, end));
   const previousExpenses = transactions.filter(transaction => transaction.type === "expense" && inRange(transaction.date, previous.start, previous.end));
   const currentExpenseTotal = currentExpenses.reduce((sum, item) => sum + item.amount, 0);
@@ -88,7 +83,6 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
   const activeModules = new Set(currentActivities.map(item => item.module)).size;
   const trackedDays = new Set(currentActivities.map(item => item.date)).size;
   const completedGoals = goals.filter(goal => goal.status === "completed" && inRange(goal.updatedAt, start, end)).length;
-  const habitConsistency = (() => { const eligibleLogs = habitLogs.filter(log => inRange(log.date, start, end)); return eligibleLogs.length ? Math.round(eligibleLogs.filter(log => log.completed).length / eligibleLogs.length * 100) : 0; })();
   const activityChange = percentChange(currentActivities.length, previousActivities.length);
   const expenseChange = percentChange(currentExpenseTotal, previousExpenseTotal);
 
@@ -112,7 +106,6 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
   if (previousActivities.length >= 3 && activityChange !== null) insights.push({ title: `Recorded activity is ${activityChange >= 0 ? "up" : "down"} ${Math.abs(activityChange)}%`, detail: `Compared with the equivalent previous period.`, metric: `${currentActivities.length} vs ${previousActivities.length}` });
   if (previousExpenses.length >= 1 && expenseChange !== null) insights.push({ title: `Expenses changed ${Math.abs(expenseChange)}%`, detail: `Recorded spending in this period compared with the previous equivalent period.`, metric: `${formatCurrency(currentExpenseTotal, currency)} vs ${formatCurrency(previousExpenseTotal, currency)}` });
   if (completedGoals) insights.push({ title: `${completedGoals} goal${completedGoals === 1 ? "" : "s"} completed`, detail: "Goals marked completed within the selected reporting period.", metric: `${completedGoals} completed` });
-  if (currentHabitLogs.length || previousHabitLogs.length) insights.push({ title: "Habit check-ins recorded", detail: "Completed check-ins are counted once per log in the selected period.", metric: `${currentHabitLogs.length} check-ins · ${habitConsistency}% consistency` });
   if (!insights.length) insights.push({ title: "Not enough history for comparisons", detail: "Add records in more than one reporting period to unlock period-over-period observations.", metric: `${currentActivities.length} records available` });
 
   const filteredHistory = activities.filter(item => {
@@ -138,7 +131,6 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
     ["ACTIVE TRACKING AREAS", activeModules, modules.length + " areas available"],
     ["DAYS TRACKED", trackedDays, dayCount + " days in this period"],
     ["GOALS COMPLETED", completedGoals, "Within selected period"],
-    ["HABIT CONSISTENCY", habitConsistency + "%", currentHabitLogs.length + " completed check-ins"],
     ["RECORDED EXPENSES", formatCurrency(currentExpenseTotal, currency), expenseChange === null ? "Selected period" : expenseChange + "% vs previous period"],
   ];
 
@@ -172,7 +164,7 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
 
     {tab === "Goals & progress" && <div className="dashboard-grid report-grid"><section className="panel"><div className="panel-heading"><h2>Goal progress</h2></div>{goals.length ? goals.map(goal => { const progress = goal.targetValue === goal.startValue ? 0 : Math.min(100, Math.max(0, (goal.currentValue - goal.startValue) / (goal.targetValue - goal.startValue) * 100)); return <div className="report-progress-row" key={goal.id}><div><strong>{goal.title}</strong><span>{goal.status} · {Math.round(progress)}%</span></div><div className="report-bar-track"><i style={{ width: progress + "%" }}/></div></div>; }) : <Empty>No goals have been created yet.</Empty>}</section><section className="panel"><div className="panel-heading"><h2>Goal status</h2></div>{["active", "completed", "paused", "cancelled"].map(status => <div className="report-module-row" key={status}><span>{status}</span><div className="report-bar-track"><i style={{ width: (goals.length ? goals.filter(goal => goal.status === status).length / Math.max(...["active", "completed", "paused", "cancelled"].map(value => goals.filter(goal => goal.status === value).length), 1) * 100 : 0) + "%" }}/></div><b>{goals.filter(goal => goal.status === status).length}</b></div>)}</section></div>}
 
-    {tab === "Life areas" && <div className="report-life-grid">{distribution.filter(item => item.count > 0 || ["Finance", "Habits", "Goals", "Productivity"].includes(item.module)).map(item => <article className="panel report-life-card" key={item.module}><p className="eyebrow">LIFE AREA</p><h2>{item.module}</h2><strong>{item.count}</strong><span>recorded activities</span></article>)}</div>}
+    {tab === "Life areas" && <div className="report-life-grid">{distribution.filter(item => item.count > 0 || ["Finance", "Goals", "Productivity"].includes(item.module)).map(item => <article className="panel report-life-card" key={item.module}><p className="eyebrow">LIFE AREA</p><h2>{item.module}</h2><strong>{item.count}</strong><span>recorded activities</span></article>)}</div>}
 
     {tab === "Insights" && <section className="panel"><div className="panel-heading"><h2>Insights</h2></div><div className="report-insights-grid">{insights.map(insight => <article className="report-insight" key={insight.title}><strong>{insight.title}</strong><p>{insight.detail}</p><span>{insight.metric}</span></article>)}</div></section>}
 
