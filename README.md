@@ -22,9 +22,9 @@ This README describes the implementation that currently exists in this repositor
 | Area | Current implementation |
 | --- | --- |
 | Overview | Monthly income, expenses, savings, and balance; transaction trends and categories; habit consistency heatmap; goal progress; task status; and recent records |
-| Finance | Accounts, categories, income and expense transactions, and spending summaries |
+| Finance | Accounts, categories, income and expense transactions, spending summaries, and cash-flow charts filtered by a shared date-range selector |
 | Habits | Daily or weekly habits, dated check-ins, streaks, and completion summaries |
-| Productivity | Tasks with scheduled date, optional deadline, priority, and status |
+| Productivity | Tasks with scheduled date, optional deadline, priority, and status; scheduled-task charts use the shared date-range selector |
 | Goals | Goal targets, progress updates, dates, priority, and status |
 | Health, Learning, Career, Travel, Shopping, Vehicle, Home, Entertainment, Calendar | Configured tracking-entry views backed by the shared `tracking_entries` collection |
 | Reports | Period-filtered overview, activity trends, life-area distribution, goal progress, observations, searchable activity history, CSV export, and printable output based on saved records |

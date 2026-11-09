@@ -4,6 +4,8 @@ import { Component, useEffect, useState, type FormEvent, type ReactNode } from "
 import * as ds from "@/lib/data-service";
 import type { Account, Category, Goal, Habit, HabitLog, IncomeDistribution, Task, Transaction } from "@/lib/types";
 import { formatCurrency, formatDate, getToday } from "@/lib/utils";
+import DateRangeFilter from "@/components/DateRangeFilter";
+import { dateRangeKey, daysInclusive, getDateRange, type DateRangePeriod } from "@/lib/date-range";
 
 type ViewProps = { onNotify: (message: string) => void };
 type DashboardProps = ViewProps & { onNavigate: (page: string) => void };
@@ -221,7 +223,7 @@ function OverviewTaskStatus({ tasks, todaysTasks, onNavigate }: { tasks: Task[];
   </>;
 }
 
-type FinanceMonth = { key: string; label: string; income: number; expenses: number; savings: number };
+type FinanceBucket = { key: string; label: string; income: number; expenses: number; savings: number };
 
 function smoothLine(points: { x: number; y: number }[]): string {
   if (!points.length) return "";
@@ -236,54 +238,70 @@ function smoothLine(points: { x: number; y: number }[]): string {
   return path;
 }
 
-function FinanceCashFlowChart({ transactions, currency, range }: { transactions: Transaction[]; currency: string; range: number }) {
-  const cutoff = new Date();
-  cutoff.setDate(1);
-  cutoff.setMonth(cutoff.getMonth() - (range - 1));
-  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}`;
-  const current = new Date();
-  const currentKey = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}`;
-  const totals = new Map<string, { income: number; expenses: number }>();
-
-  transactions.forEach(transaction => {
-    const key = transaction.date.slice(0, 7);
-    if (transaction.type === "transfer" || key < cutoffKey || key > currentKey) return;
-    const month = totals.get(key) || { income: 0, expenses: 0 };
-    if (transaction.type === "income") month.income += transaction.amount;
-    else month.expenses += transaction.amount;
-    totals.set(key, month);
-  });
-
-  const months: FinanceMonth[] = [];
-  const cursor = new Date(cutoff.getFullYear(), cutoff.getMonth(), 1);
-  while (`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}` <= currentKey) {
-    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
-    const month = totals.get(key) || { income: 0, expenses: 0 };
-    months.push({
+function FinanceCashFlowChart({ transactions, currency, start, end }: { transactions: Transaction[]; currency: string; start: Date; end: Date }) {
+  const dayCount = daysInclusive(start, end);
+  const granularity = dayCount <= 31 ? "day" : dayCount <= 92 ? "week" : "month";
+  const buckets: FinanceBucket[] = [];
+  const cursor = granularity === "month" ? new Date(start.getFullYear(), start.getMonth(), 1) : new Date(start);
+  if (granularity === "week") cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7));
+  while (cursor <= end) {
+    const bucketStart = new Date(cursor);
+    const bucketEnd = new Date(cursor);
+    if (granularity === "week") bucketEnd.setDate(bucketEnd.getDate() + 6);
+    else if (granularity === "month") bucketEnd.setMonth(bucketEnd.getMonth() + 1, 0);
+    const visibleStart = bucketStart < start ? start : bucketStart;
+    const key = granularity === "month"
+      ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`
+      : dateRangeKey(bucketStart);
+    buckets.push({
       key,
-      label: cursor.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
-      ...month,
-      savings: month.income - month.expenses,
+      label: granularity === "month"
+        ? cursor.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
+        : visibleStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      income: 0,
+      expenses: 0,
+      savings: 0,
     });
-    cursor.setMonth(cursor.getMonth() + 1);
+    if (granularity === "day") cursor.setDate(cursor.getDate() + 1);
+    else if (granularity === "week") cursor.setDate(cursor.getDate() + 7);
+    else cursor.setMonth(cursor.getMonth() + 1, 1);
   }
 
-  const hasActivity = months.some(month => month.income !== 0 || month.expenses !== 0);
+  const bucketByKey = new Map(buckets.map((bucket, index) => [bucket.key, index]));
+
+  transactions.forEach(transaction => {
+    const date = transaction.date.slice(0, 10);
+    if (transaction.type === "transfer" || date < dateRangeKey(start) || date > dateRangeKey(end)) return;
+    let bucketKey = date;
+    if (granularity === "week") {
+      const weekStart = new Date(`${date}T00:00:00`);
+      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+      bucketKey = dateRangeKey(weekStart);
+    } else if (granularity === "month") bucketKey = date.slice(0, 7);
+    const index = bucketByKey.get(bucketKey);
+    if (index === undefined) return;
+    const bucket = buckets[index];
+    if (transaction.type === "income") bucket.income += transaction.amount;
+    else bucket.expenses += transaction.amount;
+    bucket.savings = bucket.income - bucket.expenses;
+  });
+  const hasActivity = buckets.some(bucket => bucket.income !== 0 || bucket.expenses !== 0);
   if (!hasActivity) return <Empty>No income or expense records in this period.</Empty>;
 
   const width = 640;
   const height = 226;
   const padding = { left: 58, right: 24, top: 18, bottom: 34 };
-  const rawMax = Math.max(...months.flatMap(month => [month.income, month.expenses, month.savings]), 0);
-  const rawMin = Math.min(...months.flatMap(month => [month.income, month.expenses, month.savings]), 0);
+  const rawMax = Math.max(...buckets.flatMap(bucket => [bucket.income, bucket.expenses, bucket.savings]), 0);
+  const rawMin = Math.min(...buckets.flatMap(bucket => [bucket.income, bucket.expenses, bucket.savings]), 0);
   const magnitude = Math.max(Math.abs(rawMax), Math.abs(rawMin), 1);
   const maxValue = Math.ceil(magnitude / Math.pow(10, Math.max(0, Math.floor(Math.log10(magnitude)) - 1))) * Math.pow(10, Math.max(0, Math.floor(Math.log10(magnitude)) - 1));
   const minValue = Math.min(rawMin, 0);
   const plotHeight = height - padding.top - padding.bottom;
   const plotWidth = width - padding.left - padding.right;
   const yFor = (value: number) => padding.top + ((maxValue - value) / (maxValue - minValue || 1)) * plotHeight;
-  const xFor = (index: number) => padding.left + (months.length === 1 ? plotWidth / 2 : (index / (months.length - 1)) * plotWidth);
-  const pointsFor = (series: "income" | "expenses" | "savings") => months.map((month, index) => ({ x: xFor(index), y: yFor(series === "income" ? month.income : series === "expenses" ? month.expenses : month.savings) }));
+  const xFor = (index: number) => padding.left + (buckets.length === 1 ? plotWidth / 2 : (index / (buckets.length - 1)) * plotWidth);
+  const pointsFor = (series: "income" | "expenses" | "savings") => buckets.map((bucket, index) => ({ x: xFor(index), y: yFor(series === "income" ? bucket.income : series === "expenses" ? bucket.expenses : bucket.savings) }));
+  const axisLabelEvery = Math.ceil(buckets.length / 12);
   const incomePoints = pointsFor("income");
   const expensePoints = pointsFor("expenses");
   const savingsPoints = pointsFor("savings");
@@ -300,10 +318,10 @@ function FinanceCashFlowChart({ transactions, currency, range }: { transactions:
 
   return <>
     <p className="finance-chart-caption">
-      {months.filter(month => month.income || month.expenses).length < 2 ? "One recorded month so far; keep logging transactions to reveal a trend." : "Recorded activity across the selected period · hover points for exact totals"}
+      {buckets.filter(bucket => bucket.income || bucket.expenses).length < 2 ? "One recorded interval so far; keep logging transactions to reveal a trend." : `Recorded activity by ${granularity} across the selected period · hover points for exact totals`}
     </p>
     <div className="finance-cashflow-wrap">
-      <svg className="finance-cashflow-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Monthly income, expenses, and net savings over ${range} months`}>
+      <svg className="finance-cashflow-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${granularity[0].toUpperCase()}${granularity.slice(1)} income, expenses, and net savings over the selected period`}>
         {[0, 0.25, 0.5, 0.75, 1].map(fraction => {
           const value = maxValue - ((maxValue - minValue) * fraction);
           const y = padding.top + plotHeight * fraction;
@@ -314,13 +332,13 @@ function FinanceCashFlowChart({ transactions, currency, range }: { transactions:
         {incomePoints.length > 1 && <path className="finance-income-line" d={incomePath} />}
         {incomePoints.length > 1 && <path className="finance-expense-line" d={expensePath} />}
         {savingsPoints.length > 1 && <path className="finance-savings-line" d={savingsPath} />}
-        {months.map((month, index) => {
+        {buckets.map((bucket, index) => {
           const x = xFor(index);
-          return <g key={month.key}>
-            <circle className="finance-series-point income-series" cx={x} cy={yFor(month.income)} r="4"><title>{month.label} income: {formatCurrency(month.income, currency)}</title></circle>
-            <circle className="finance-series-point expense-series" cx={x} cy={yFor(month.expenses)} r="4"><title>{month.label} expenses: {formatCurrency(month.expenses, currency)}</title></circle>
-            <circle className="finance-savings-point" cx={x} cy={yFor(month.savings)} r="4"><title>{month.label} net savings: {formatCurrency(month.savings, currency)}</title></circle>
-            <text className="finance-axis-label" x={x} y={height - 7} textAnchor="middle">{month.label}</text>
+          return <g key={bucket.key}>
+            <circle className="finance-series-point income-series" cx={x} cy={yFor(bucket.income)} r="4"><title>{bucket.label} income: {formatCurrency(bucket.income, currency)}</title></circle>
+            <circle className="finance-series-point expense-series" cx={x} cy={yFor(bucket.expenses)} r="4"><title>{bucket.label} expenses: {formatCurrency(bucket.expenses, currency)}</title></circle>
+            <circle className="finance-savings-point" cx={x} cy={yFor(bucket.savings)} r="4"><title>{bucket.label} net savings: {formatCurrency(bucket.savings, currency)}</title></circle>
+            <text className="finance-axis-label" x={x} y={height - 7} textAnchor="middle">{index % axisLabelEvery === 0 || index === buckets.length - 1 ? bucket.label : ""}</text>
           </g>;
         })}
       </svg>
@@ -330,7 +348,7 @@ function FinanceCashFlowChart({ transactions, currency, range }: { transactions:
       <span><i className="expense-legend" />Expenses</span>
       <span><i className="savings-legend" />Net savings</span>
     </div>
-    <div className="sr-only">{months.map(month => `${month.label}: income ${formatCurrency(month.income, currency)}, expenses ${formatCurrency(month.expenses, currency)}, net savings ${formatCurrency(month.savings, currency)}.`).join(" ")}</div>
+    <div className="sr-only">{buckets.map(bucket => `${bucket.label}: income ${formatCurrency(bucket.income, currency)}, expenses ${formatCurrency(bucket.expenses, currency)}, net savings ${formatCurrency(bucket.savings, currency)}.`).join(" ")}</div>
   </>;
 }
 
@@ -464,51 +482,61 @@ function FinanceAccountOverview({ accounts, currency }: { accounts: Account[]; c
   </div>;
 }
 
-function TaskScheduleTrend({ tasks, range }: { tasks: Task[]; range: number }) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const currentWeekStart = new Date(today);
-  currentWeekStart.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  currentWeekStart.setDate(currentWeekStart.getDate() - 7 * (range - 1));
-  const buckets = Array.from({ length: range }, (_, index) => {
-    const start = new Date(currentWeekStart);
-    start.setDate(currentWeekStart.getDate() + index * 7);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    return {
-      key: dateKey(start),
-      label: start.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      endKey: dateKey(end),
+function TaskScheduleTrend({ tasks, start, end }: { tasks: Task[]; start: Date; end: Date }) {
+  const dayCount = daysInclusive(start, end);
+  const granularity = dayCount <= 31 ? "day" : dayCount <= 92 ? "week" : "month";
+  const buckets: Array<{ key: string; label: string; count: number }> = [];
+  const cursor = granularity === "month" ? new Date(start.getFullYear(), start.getMonth(), 1) : new Date(start);
+  if (granularity === "week") cursor.setDate(cursor.getDate() - ((cursor.getDay() + 6) % 7));
+  while (cursor <= end) {
+    const bucketStart = new Date(cursor);
+    const bucketEnd = new Date(cursor);
+    if (granularity === "week") bucketEnd.setDate(bucketEnd.getDate() + 6);
+    else if (granularity === "month") bucketEnd.setMonth(bucketEnd.getMonth() + 1, 0);
+    const visibleStart = bucketStart < start ? start : bucketStart;
+    buckets.push({
+      key: granularity === "month" ? `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}` : dateRangeKey(bucketStart),
+      label: granularity === "month"
+        ? cursor.toLocaleDateString("en-US", { month: "short", year: "2-digit" })
+        : visibleStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       count: 0,
-    };
-  });
-  const bucketByWeek = new Map(buckets.map((bucket, index) => [bucket.key, index]));
+    });
+    if (granularity === "day") cursor.setDate(cursor.getDate() + 1);
+    else if (granularity === "week") cursor.setDate(cursor.getDate() + 7);
+    else cursor.setMonth(cursor.getMonth() + 1, 1);
+  }
+  const bucketByKey = new Map(buckets.map((bucket, index) => [bucket.key, index]));
 
-  tasks.filter(task => task.status !== "cancelled").forEach(task => {
-    const date = new Date(`${task.date}T00:00:00`);
-    const weekStart = new Date(date);
-    weekStart.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-    const index = bucketByWeek.get(dateKey(weekStart));
+  const filteredTasks = tasks.filter(task => task.status !== "cancelled" && task.date >= dateRangeKey(start) && task.date <= dateRangeKey(end));
+  filteredTasks.forEach(task => {
+    let bucketKey = task.date.slice(0, 10);
+    if (granularity === "week") {
+      const weekStart = new Date(`${bucketKey}T00:00:00`);
+      weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+      bucketKey = dateRangeKey(weekStart);
+    } else if (granularity === "month") bucketKey = bucketKey.slice(0, 7);
+    const index = bucketByKey.get(bucketKey);
     if (index !== undefined) buckets[index].count++;
   });
 
-  if (!tasks.some(task => task.status !== "cancelled" && task.date >= buckets[0].key && task.date <= buckets[buckets.length - 1].endKey)) {
+  if (!filteredTasks.length) {
     return <Empty>No scheduled task activity in this period.</Empty>;
   }
 
   const maxCount = Math.max(...buckets.map(bucket => bucket.count), 1);
+  const axisLabelEvery = Math.ceil(buckets.length / 12);
   return <>
-    <p className="productivity-chart-caption">Non-cancelled tasks by scheduled week · not completion history</p>
-    <div className="productivity-week-chart" role="img" aria-label={`Scheduled tasks per week for the last ${range} weeks`}>
-      {buckets.map(bucket => <div className="productivity-week-column" key={bucket.key}>
+    <p className="productivity-chart-caption">Non-cancelled tasks by scheduled {granularity} · not completion history</p>
+    <div className="productivity-week-chart" role="img" aria-label={`Scheduled tasks by ${granularity} for the selected period`}>
+      {buckets.map((bucket, index) => <div className="productivity-week-column" key={bucket.key}>
         <div className="productivity-week-bar-wrap">
           <i
             className={bucket.count ? "has-tasks" : ""}
             style={{ height: `${bucket.count ? Math.max(4, (bucket.count / maxCount) * 100) : 0}%` }}
-            title={`${bucket.label} week: ${bucket.count} scheduled task${bucket.count === 1 ? "" : "s"}`}
+            title={`${bucket.label} ${granularity}: ${bucket.count} scheduled task${bucket.count === 1 ? "" : "s"}`}
           />
         </div>
-        <span>{bucket.label}</span>
+        <span>{index % axisLabelEvery === 0 || index === buckets.length - 1 ? bucket.label : ""}</span>
         <small>{bucket.count}</small>
       </div>)}
     </div>
@@ -633,7 +661,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
 export function FinanceView({ onNotify }: ViewProps) {
   const [revision, setRevision] = useState(0);
-  const [trendRange, setTrendRange] = useState(6);
+  const [trendPeriod, setTrendPeriod] = useState<DateRangePeriod>("month");
+  const [trendCustomStart, setTrendCustomStart] = useState(getToday().slice(0, 8) + "01");
+  const [trendCustomEnd, setTrendCustomEnd] = useState(getToday());
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -663,6 +693,7 @@ export function FinanceView({ onNotify }: ViewProps) {
   }, [onNotify, revision]);
 
   const currency = ds.getProfile()?.currencySymbol || "৳";
+  const trendRange = getDateRange(trendPeriod, trendCustomStart, trendCustomEnd);
   const filteredCategories = categories.filter(category => category.type === type);
   const refresh = () => setRevision(value => value + 1);
 
@@ -773,14 +804,20 @@ export function FinanceView({ onNotify }: ViewProps) {
     <div className="welcome-row"><div><p className="eyebrow">MONEY, MADE VISIBLE</p><h1>Finance<span>.</span></h1><p className="subheading">Every figure here comes from your saved transactions.</p></div><div className="top-actions"><button className="secondary-button" type="button" onClick={exportFinanceCsv}>Export CSV</button><button className="secondary-button" type="button" onClick={() => window.print()}>Print / PDF</button></div></div>
     <div className="metric-grid finance-metrics"><div className="metric-card"><p>THIS MONTH INCOME</p><strong className="metric-value">{formatCurrency(income, currency)}</strong><div className="metric-change">Recorded income</div></div><div className="metric-card"><p>THIS MONTH EXPENSES</p><strong className="metric-value">{formatCurrency(expenses, currency)}</strong><div className="metric-change orange">Recorded expenses</div></div><div className="metric-card"><p>THIS MONTH SAVINGS</p><strong className="metric-value">{formatCurrency(income - expenses, currency)}</strong><div className="metric-change">Income minus expenses</div></div><div className="metric-card"><p>ACCOUNT BALANCE</p><strong className="metric-value">{formatCurrency(ds.getTotalBalance(), currency)}</strong><div className="metric-change">Across active accounts</div></div></div>
     <div className="finance-period-row">
-      <span>Cash flow period</span>
-      <div className="finance-range-controls" role="group" aria-label="Cash flow chart period">
-        {[3, 6, 12].map(months => <button className={trendRange === months ? "selected" : ""} type="button" key={months} onClick={() => setTrendRange(months)} aria-pressed={trendRange === months}>{months} months</button>)}
-      </div>
+      <DateRangeFilter
+        className="date-range-filter--inline"
+        label="Cash flow period"
+        period={trendPeriod}
+        customStart={trendCustomStart}
+        customEnd={trendCustomEnd}
+        onPeriodChange={setTrendPeriod}
+        onCustomStartChange={value => { setTrendCustomStart(value); if (value > trendCustomEnd) setTrendCustomEnd(value); }}
+        onCustomEndChange={value => { setTrendCustomEnd(value); if (value < trendCustomStart) setTrendCustomStart(value); }}
+      />
     </div>
     <div className="dashboard-grid finance-grid">
       <Panel title="Cash flow trend">
-        <FinanceCashFlowChart transactions={transactions} currency={currency} range={trendRange} />
+        <FinanceCashFlowChart transactions={transactions} currency={currency} start={trendRange.start} end={trendRange.end} />
       </Panel>
       <Panel title="Where spending goes">
         <p className="finance-chart-caption">Top categories this month, ranked by amount</p>
@@ -895,12 +932,15 @@ function GoalRow({ goal, onNotify, refresh }: { goal: Goal; onNotify: ViewProps[
 
 export function TasksView({ onNotify }: ViewProps) {
   const [revision, setRevision] = useState(0);
-  const [scheduleRange, setScheduleRange] = useState(8);
+  const [schedulePeriod, setSchedulePeriod] = useState<DateRangePeriod>("month");
+  const [scheduleCustomStart, setScheduleCustomStart] = useState(getToday().slice(0, 8) + "01");
+  const [scheduleCustomEnd, setScheduleCustomEnd] = useState(getToday());
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(getToday());
   const [deadline, setDeadline] = useState("");
   const [priority, setPriority] = useState<Task["priority"]>("medium");
   const tasks = ds.getTasks();
+  const scheduleRange = getDateRange(schedulePeriod, scheduleCustomStart, scheduleCustomEnd);
   const taskStats = ds.getTaskStats();
   const completionRate = taskStats.total ? Math.round((taskStats.completed / taskStats.total) * 100) : 0;
   const statusLabels: Record<Task["status"], string> = {
@@ -935,14 +975,20 @@ export function TasksView({ onNotify }: ViewProps) {
       <div className="metric-card"><p>OVERDUE</p><strong className="metric-value">{taskStats.overdue}</strong><div className="metric-change orange">Past deadline · still open</div></div>
     </div>
     <div className="productivity-period-row">
-      <span>Scheduled workload</span>
-      <div className="productivity-range-controls" role="group" aria-label="Scheduled task chart period">
-        {[4, 8, 12].map(weeks => <button className={scheduleRange === weeks ? "selected" : ""} type="button" key={weeks} onClick={() => setScheduleRange(weeks)} aria-pressed={scheduleRange === weeks}>{weeks} weeks</button>)}
-      </div>
+      <DateRangeFilter
+        className="date-range-filter--inline"
+        label="Scheduled workload"
+        period={schedulePeriod}
+        customStart={scheduleCustomStart}
+        customEnd={scheduleCustomEnd}
+        onPeriodChange={setSchedulePeriod}
+        onCustomStartChange={value => { setScheduleCustomStart(value); if (value > scheduleCustomEnd) setScheduleCustomEnd(value); }}
+        onCustomEndChange={value => { setScheduleCustomEnd(value); if (value < scheduleCustomStart) setScheduleCustomStart(value); }}
+      />
     </div>
     <div className="dashboard-grid productivity-grid">
       <Panel title="Tasks scheduled over time">
-        <TaskScheduleTrend tasks={tasks} range={scheduleRange} />
+        <TaskScheduleTrend tasks={tasks} start={scheduleRange.start} end={scheduleRange.end} />
       </Panel>
       <Panel title="Task status">
         <p className="productivity-chart-caption">Current saved status across all tasks</p>

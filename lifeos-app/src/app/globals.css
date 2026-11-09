@@ -34,8 +34,6 @@ html[data-theme="dark"] .search-input-row input {
 
 html[data-theme="dark"] .secondary-button,
 html[data-theme="dark"] .danger-button,
-html[data-theme="dark"] .finance-range-controls,
-html[data-theme="dark"] .productivity-range-controls,
 html[data-theme="dark"] .insight-banner,
 html[data-theme="dark"] .habits-panel,
 html[data-theme="dark"] .module-stat,
@@ -414,9 +412,10 @@ nav { display:grid; gap:2px; }
 .finance-grid { grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr); align-items:stretch; margin-bottom:13px; }
 .finance-grid .panel { min-height:255px; }
 .finance-period-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin:-12px 0 12px; color:#84918b; font-size:10px; }
-.finance-range-controls { display:flex; gap:4px; padding:3px; border:1px solid var(--line); border-radius:6px; background:#fff; }
-.finance-range-controls button { min-height:27px; padding:0 9px; border:0; border-radius:4px; background:transparent; color:#84918b; font-size:9px; }
-.finance-range-controls button.selected { background:#edf4ef; color:var(--teal); font-weight:700; }
+.date-range-filter--report { display:contents; }
+.date-range-filter--inline { display:flex; align-items:center; flex-wrap:wrap; gap:9px; }
+.date-range-filter--inline .date-range-label { display:flex; align-items:center; gap:9px; color:#71807b; font-size:10px; }
+.date-range-select,.date-range-input { min-height:34px; border:1px solid var(--line); border-radius:5px; background:var(--panel); color:var(--ink); padding:0 10px; font:400 11px 'DM Sans',sans-serif; }
 .finance-chart-caption { margin:9px 0 0; color:#98a39e; font-size:10px; line-height:1.45; }
 .finance-cashflow-wrap { height:218px; margin-top:8px; }
 .finance-cashflow-chart { display:block; width:100%; height:100%; overflow:visible; }
@@ -483,8 +482,9 @@ nav { display:grid; gap:2px; }
 }
 @media (max-width:700px) {
   .finance-period-row { align-items:flex-start; flex-direction:column; margin-top:-8px; }
-  .finance-range-controls { width:100%; }
-  .finance-range-controls button { flex:1; }
+  .date-range-filter--inline { flex-wrap:wrap; width:100%; }
+  .date-range-filter--inline .date-range-label { justify-content:space-between; width:100%; }
+  .date-range-select,.date-range-input { flex:1; }
   .finance-distribution { grid-template-columns:minmax(110px,.8fr) minmax(0,1fr); gap:8px; }
   .finance-cashflow-wrap { height:210px; }
   .finance-heatmap-months { gap:3px; margin-left:20px; font-size:8px; }
@@ -497,9 +497,6 @@ nav { display:grid; gap:2px; }
 .productivity-grid { grid-template-columns:minmax(0,1.45fr) minmax(280px,1fr); align-items:stretch; margin-bottom:13px; }
 .productivity-grid .panel { min-height:250px; }
 .productivity-period-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin:-12px 0 12px; color:#84918b; font-size:10px; }
-.productivity-range-controls { display:flex; gap:4px; padding:3px; border:1px solid var(--line); border-radius:6px; background:#fff; }
-.productivity-range-controls button { min-height:27px; padding:0 10px; border:0; border-radius:4px; background:transparent; color:#84918b; font-size:9px; }
-.productivity-range-controls button.selected { background:#edf4ef; color:var(--teal); font-weight:700; }
 .productivity-chart-caption { margin:9px 0 0; color:#98a39e; font-size:10px; line-height:1.45; }
 .productivity-week-chart { height:190px; display:flex; align-items:stretch; gap:10px; margin-top:15px; border-bottom:1px solid var(--line); }
 .productivity-week-column { flex:1; display:flex; min-width:0; flex-direction:column; align-items:center; justify-content:flex-end; gap:6px; color:#98a39e; font-size:9px; }
@@ -528,8 +525,6 @@ nav { display:grid; gap:2px; }
 }
 @media (max-width:700px) {
   .productivity-period-row { align-items:flex-start; flex-direction:column; margin-top:-8px; }
-  .productivity-range-controls { width:100%; }
-  .productivity-range-controls button { flex:1; }
   .productivity-heatmap-months { gap:3px; margin-left:20px; font-size:8px; }
   .productivity-heatmap-layout { grid-template-columns:13px minmax(0,1fr); gap:5px; }
   .productivity-heatmap,.productivity-heatmap-weekdays { grid-template-rows:repeat(7,12px); gap:4px; }

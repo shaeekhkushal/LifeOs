@@ -3,36 +3,16 @@
 import { useMemo, useState } from "react";
 import * as ds from "@/lib/data-service";
 import { formatCurrency, formatDate, getToday } from "@/lib/utils";
-import type { Goal, HabitLog, Task, TrackingEntry, Transaction } from "@/lib/types";
+import DateRangeFilter from "@/components/DateRangeFilter";
+import { daysInclusive, dateRangeKey, getDateRange, type DateRangePeriod } from "@/lib/date-range";
 
-type Period = "7d" | "30d" | "month" | "last-month" | "3m" | "6m" | "year" | "custom";
 type Tab = "Overview" | "Activity & trends" | "Goals & progress" | "Life areas" | "Insights" | "History";
 type Activity = { id: string; date: string; module: string; activity: string; description: string; status: string; amount?: number };
 
 const tabs: Tab[] = ["Overview", "Activity & trends", "Goals & progress", "Life areas", "Insights", "History"];
 const modules = ["Finance", "Health", "Habits", "Goals", "Productivity", "Learning", "Career", "Travel", "Shopping", "Vehicle", "Home", "Entertainment", "Calendar"];
 
-function dateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
-function startOfDay(date: Date) { const copy = new Date(date); copy.setHours(0, 0, 0, 0); return copy; }
 function addDays(date: Date, days: number) { const copy = new Date(date); copy.setDate(copy.getDate() + days); return copy; }
-function addMonths(date: Date, months: number) { const copy = new Date(date.getFullYear(), date.getMonth() + months, 1); return copy; }
-function parseDate(value: string) { return new Date(`${value.slice(0, 10)}T00:00:00`); }
-function daysInclusive(start: Date, end: Date) { return Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1); }
-
-function periodRange(period: Period, customStart: string, customEnd: string) {
-  const today = startOfDay(parseDate(getToday()));
-  let start: Date;
-  let end = today;
-  if (period === "7d") start = addDays(today, -6);
-  else if (period === "30d") start = addDays(today, -29);
-  else if (period === "month") start = new Date(today.getFullYear(), today.getMonth(), 1);
-  else if (period === "last-month") { start = new Date(today.getFullYear(), today.getMonth() - 1, 1); end = new Date(today.getFullYear(), today.getMonth(), 0); }
-  else if (period === "3m") start = addMonths(today, -3);
-  else if (period === "6m") start = addMonths(today, -6);
-  else if (period === "year") start = new Date(today.getFullYear(), 0, 1);
-  else { start = parseDate(customStart || getToday()); end = parseDate(customEnd || customStart || getToday()); }
-  return { start, end };
-}
 
 function previousRange(start: Date, end: Date) {
   const length = daysInclusive(start, end);
@@ -51,7 +31,7 @@ function downloadCsv(rows: Array<Array<string | number | null | undefined>>) {
 }
 
 function Empty({ children }: { children: string }) { return <p className="data-empty">{children}</p>; }
-function inRange(date: string, start: Date, end: Date) { const key = date.slice(0, 10); return key >= dateKey(start) && key <= dateKey(end); }
+function inRange(date: string, start: Date, end: Date) { const key = date.slice(0, 10); return key >= dateRangeKey(start) && key <= dateRangeKey(end); }
 function percentChange(current: number, previous: number) {
   if (!previous) return null;
   return Math.round(((current - previous) / previous) * 100);
@@ -69,7 +49,7 @@ function smoothPath(points: Array<{ x: number; y: number }>) {
 }
 
 export default function ReportsView({ onNotify }: { onNotify: (message: string) => void }) {
-  const [period, setPeriod] = useState<Period>("30d");
+  const [period, setPeriod] = useState<DateRangePeriod>("month");
   const [customStart, setCustomStart] = useState(getToday().slice(0, 8) + "01");
   const [customEnd, setCustomEnd] = useState(getToday());
   const [tab, setTab] = useState<Tab>("Overview");
@@ -83,7 +63,7 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
   const habits = ds.getHabits(false);
   const goals = ds.getGoals();
   const tasks = ds.getTasks();
-  const { start, end } = periodRange(period, customStart, customEnd);
+  const { start, end } = getDateRange(period, customStart, customEnd);
   const previous = previousRange(start, end);
   const currency = ds.getProfile()?.currencySymbol || "৳";
   const dayCount = daysInclusive(start, end);
@@ -121,7 +101,7 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
     const nextIndex = index === bucketCount - 1 ? dayCount : Math.floor((index + 1) * dayCount / bucketCount);
     const bucketEnd = addDays(start, nextIndex - 1);
     const count = currentActivities.filter(item => inRange(item.date, bucketStart, bucketEnd)).length;
-    return { key: dateKey(bucketStart), label: bucketCount <= 12 ? bucketStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : bucketStart.toLocaleDateString("en-US", { month: "short" }), count };
+    return { key: dateRangeKey(bucketStart), label: bucketCount <= 12 ? bucketStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : bucketStart.toLocaleDateString("en-US", { month: "short" }), count };
   });
   const maxTrend = Math.max(...trend.map(item => item.count), 1);
   const graphPoints = trend.map((item, index) => ({ ...item, x: trend.length === 1 ? 320 : 38 + index * 564 / Math.max(1, trend.length - 1), y: 168 - item.count / maxTrend * 112 }));
@@ -166,9 +146,17 @@ export default function ReportsView({ onNotify }: { onNotify: (message: string) 
     <div className="welcome-row"><div><p className="eyebrow">SEE WHAT THE RECORDS SAY</p><h1>Reports<span>.</span></h1><p className="subheading">Understand activity, consistency, progress, and change across your recorded life.</p></div><div className="top-actions"><button className="secondary-button" type="button" onClick={exportReport}>Export CSV</button><button className="secondary-button" type="button" onClick={() => window.print()}>Print / PDF</button></div></div>
 
     <div className="report-toolbar">
-      <label>Reporting period<select value={period} onChange={event => { setPeriod(event.target.value as Period); setHistoryPage(1); }}><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="month">This month</option><option value="last-month">Last month</option><option value="3m">Last 3 months</option><option value="6m">Last 6 months</option><option value="year">This year</option><option value="custom">Custom range</option></select></label>
-      {period === "custom" && <><label>From<input type="date" value={customStart} onChange={event => setCustomStart(event.target.value)} /></label><label>To<input type="date" value={customEnd} max={getToday()} onChange={event => setCustomEnd(event.target.value)} /></label></>}
-      <span className="report-period-caption">{formatDate(dateKey(start))} — {formatDate(dateKey(end))}</span>
+      <DateRangeFilter
+        className="date-range-filter--report"
+        label="Reporting period"
+        period={period}
+        customStart={customStart}
+        customEnd={customEnd}
+        onPeriodChange={value => { setPeriod(value); setHistoryPage(1); }}
+        onCustomStartChange={value => { setCustomStart(value); if (value > customEnd) setCustomEnd(value); }}
+        onCustomEndChange={value => { setCustomEnd(value); if (value < customStart) setCustomStart(value); }}
+      />
+      <span className="report-period-caption">{formatDate(dateRangeKey(start))} — {formatDate(dateRangeKey(end))}</span>
     </div>
     <nav className="report-tabs" aria-label="Report sections">{tabs.map(item => <button type="button" className={item === tab ? "active" : ""} key={item} onClick={() => setTab(item)}>{item}</button>)}</nav>
 
