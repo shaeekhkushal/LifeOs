@@ -431,6 +431,7 @@ nav { display:grid; gap:2px; }
 .finance-distribution-item span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .finance-distribution-item b { color:var(--ink); font-size:9px; }
 .finance-account-overview { display:grid; gap:15px; margin-top:18px; }
+.finance-account-caption { margin:0 0 -3px; color:#98a39e; font-size:9px; line-height:1.45; }
 .finance-account-heading { display:flex; justify-content:space-between; gap:10px; align-items:center; }
 .finance-account-heading>span { display:grid; gap:4px; min-width:0; }
 .finance-account-heading b { overflow:hidden; color:#53645e; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }

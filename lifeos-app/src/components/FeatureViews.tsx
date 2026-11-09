@@ -301,9 +301,7 @@ function FinanceSpendingDistribution({ categories, currency }: { categories: { c
   if (!positiveCategories.length) return <Empty>No expense distribution available this month.</Empty>;
 
   const ranked = [...positiveCategories].sort((a, b) => b.amount - a.amount);
-  const displayed = ranked.length > 6
-    ? [...ranked.slice(0, 5), { categoryName: "Other categories", amount: ranked.slice(5).reduce((sum, category) => sum + category.amount, 0) }]
-    : ranked;
+  const displayed = ranked;
   const total = displayed.reduce((sum, category) => sum + category.amount, 0);
   const colors = ["#e8754f", "#527f73", "#e9ad49", "#8b83b5", "#6d9bb0", "#c47a8b"];
   const radius = 43;
@@ -415,14 +413,44 @@ function dateKey(date: Date): string {
 function FinanceAccountOverview({ accounts, currency }: { accounts: Account[]; currency: string }) {
   if (!accounts.length) return <Empty>No active accounts available.</Empty>;
 
-  const balances = accounts.map(account => ({ account, balance: ds.getAccountBalance(account.id) }));
-  const maxBalance = Math.max(...balances.map(item => Math.abs(item.balance)), 0);
+  const groupedBalances = new Map<string, { name: string; type: Account["type"]; balance: number; accountCount: number }>();
+  accounts.forEach(account => {
+    const key = `${account.type}:${account.name.trim().toLowerCase()}`;
+    const existing = groupedBalances.get(key);
+    if (existing) {
+      existing.balance += ds.getAccountBalance(account.id);
+      existing.accountCount++;
+    } else {
+      groupedBalances.set(key, {
+        name: account.name.trim(),
+        type: account.type,
+        balance: ds.getAccountBalance(account.id),
+        accountCount: 1,
+      });
+    }
+  });
+  const balances = Array.from(groupedBalances.entries(), ([key, account]) => ({ key, ...account }));
   const absoluteTotal = balances.reduce((sum, item) => sum + Math.abs(item.balance), 0);
   return <div className="finance-account-overview">
-    {balances.map(({ account, balance }) => <div className="finance-account-item" key={account.id}>
-      <div className="finance-account-heading"><span><b>{account.name}</b><small>{account.type.replaceAll("_", " ")}{absoluteTotal > 0 ? ` · ${Math.round((Math.abs(balance) / absoluteTotal) * 100)}% of total` : ""}</small></span><strong>{formatCurrency(balance, currency)}</strong></div>
-      <div className="finance-account-track" title={`${account.name}: ${formatCurrency(balance, currency)}`}><i className={balance < 0 ? "negative-balance" : ""} style={{ width: `${maxBalance > 0 ? (Math.abs(balance) / maxBalance) * 100 : 0}%` }} /></div>
-    </div>)}
+    <p className="finance-account-caption">Bars show each account’s share of total absolute balances; green is positive and orange is negative.</p>
+    {balances.map(({ key, name, type, balance, accountCount }) => {
+      const share = absoluteTotal > 0 ? Math.abs(balance) / absoluteTotal : 0;
+      const percent = Math.round(share * 100);
+      const direction = balance < 0 ? "negative" : "positive";
+      const combinedLabel = accountCount > 1 ? ` · ${accountCount} accounts combined` : "";
+      return <div className="finance-account-item" key={key}>
+        <div className="finance-account-heading"><span><b>{name}</b><small>{type.replaceAll("_", " ")} · {percent}% of absolute total{combinedLabel}</small></span><strong>{formatCurrency(balance, currency)}</strong></div>
+        <div
+          className="finance-account-track"
+          title={`${name}: ${formatCurrency(balance, currency)} · ${percent}% of total absolute balances · ${direction} balance${combinedLabel}`}
+          role="progressbar"
+          aria-label={`${name}, ${percent}% of total absolute balances`}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
+        ><i className={balance < 0 ? "negative-balance" : ""} style={{ width: `${share * 100}%` }} /></div>
+      </div>;
+    })}
   </div>;
 }
 
@@ -752,16 +780,16 @@ export function FinanceView({ onNotify }: ViewProps) {
       <Panel title="Cash flow trend">
         <FinanceCashFlowChart transactions={transactions} currency={currency} start={trendRange.start} end={trendRange.end} />
       </Panel>
+      <Panel title="Spending distribution">
+        <FinanceSpendingDistribution categories={expenseCategories} currency={currency} />
+      </Panel>
+    </div>
+    <div className="dashboard-grid finance-grid">
       <Panel title="Where spending goes">
         <p className="finance-chart-caption">Top categories this month, ranked by amount</p>
         <HorizontalBarChart data={topExpenseCategories} emptyText="No expense categories yet." color="#e8754f" formatter={value => formatCurrency(value, currency)} showPercentage />
       </Panel>
-    </div>
-    <div className="dashboard-grid finance-grid">
-      <Panel title="Spending distribution">
-        <FinanceSpendingDistribution categories={expenseCategories} currency={currency} />
-      </Panel>
-      <Panel title={`Account balances (${accounts.length})`}>
+      <Panel title={`Account balances (${accounts.length} accounts)`}>
         <FinanceAccountOverview accounts={accounts} currency={currency} />
       </Panel>
     </div>
